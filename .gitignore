@@ -1,0 +1,6 @@
+# Artefatti di compilazione
+.build/
+Aurora.app/
+
+# macOS
+.DS_Store
