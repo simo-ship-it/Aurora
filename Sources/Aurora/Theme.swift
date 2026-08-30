@@ -131,6 +131,8 @@ extension NSAttributedString.Key {
     static let auroraGlyph = NSAttributedString.Key("auroraGlyph")
     /// URL di un collegamento, gestito internamente (no attributo .link).
     static let auroraLink = NSAttributedString.Key("auroraLink")
+    /// Riga dei trattini di una tabella: al suo posto si disegna il filetto.
+    static let auroraTableRule = NSAttributedString.Key("auroraTableRule")
     /// Range della checkbox di una task list; il valore è lo stato.
     static let auroraCheckbox = NSAttributedString.Key("auroraCheckbox")
 }

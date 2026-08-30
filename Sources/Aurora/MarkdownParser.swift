@@ -366,19 +366,45 @@ enum MarkdownParser {
         return false
     }
 
+    /// Riga di delimitazione: ogni cella dev'essere fatta di trattini, con
+    /// eventuali due punti ai lati per l'allineamento. GFM ne chiede **uno per
+    /// cella**, non tre in tutta la riga: `| - | - |` è una tabella valida.
     private static func isDelimiterRow(_ ns: NSString, _ line: LineInfo) -> Bool {
-        var i = line.contentRange.location
+        let start = line.contentRange.location
         let end = NSMaxRange(line.contentRange)
-        guard end > i else { return false }
-        var dashes = 0, pipes = 0
-        while i < end {
-            let c = ns.character(at: i)
-            if c == dash { dashes += 1 }
-            else if c == pipe { pipes += 1 }
-            else if c != colon && !isBlank(c) { return false }
-            i += 1
+        guard end > start else { return false }
+
+        /// `nil` se la cella è vuota (le barre esterne ne creano una per lato).
+        func valida(_ from: Int, _ to: Int) -> Bool? {
+            var a = from, b = to
+            while a < b, isBlank(ns.character(at: a)) { a += 1 }
+            while b > a, isBlank(ns.character(at: b - 1)) { b -= 1 }
+            guard a < b else { return nil }
+            var i = a
+            if ns.character(at: i) == colon { i += 1 }
+            var trattini = 0
+            while i < b, ns.character(at: i) == dash { i += 1; trattini += 1 }
+            if i < b, ns.character(at: i) == colon { i += 1 }
+            return i == b && trattini >= 1
         }
-        return dashes >= 3 && pipes >= 1
+
+        var pipes = 0, celle = 0, cellStart = start, index = start
+        while index < end {
+            if ns.character(at: index) == pipe {
+                pipes += 1
+                if let ok = valida(cellStart, index) {
+                    guard ok else { return false }
+                    celle += 1
+                }
+                cellStart = index + 1
+            }
+            index += 1
+        }
+        if let ok = valida(cellStart, end) {
+            guard ok else { return false }
+            celle += 1
+        }
+        return celle >= 1 && pipes >= 1
     }
 
     // MARK: Inline

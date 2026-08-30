@@ -39,7 +39,7 @@ file dal Finder e il menu documenti funzionano solo eseguendo il bundle `.app`.
 | Task list `- [ ]` / `- [x]` | Casella cliccabile, voce completata barrata |
 | `[testo](url)` e `<url>` | Collegamento colorato, apribile con ⌘-clic |
 | `---`, `***`, `___` | Linea orizzontale disegnata |
-| Tabelle `\| a \| b \|` | Allineate a spaziatura fissa, intestazione in grassetto |
+| Tabelle `\| a \| b \|` | Colonne allineate, intestazione in grassetto, allineamenti `:---:` |
 
 ## Scrittura
 
@@ -107,6 +107,7 @@ Sources/Aurora/
   MarkdownParser.swift     analisi di blocchi e elementi inline (solo indici, nessuna copia)
   MarkdownStyler.swift     dal risultato dell'analisi agli attributi del testo
   SlashMenu.swift          il menu dei comandi che si apre con "/"
+  TableLayout.swift        celle, colonne e allineamenti delle tabelle
   Workspace.swift          cartella di lavoro e stato dell'albero, su UserDefaults
   WorkspaceBrowser.swift   pulsante in barra del titolo e albero dei file
   Theme.swift              font, colori chiari/scuri, metriche
@@ -132,6 +133,15 @@ una riga più su. Si enumerano invece i frammenti di riga inquadrati e si tengon
 quelli che **cominciano** dentro l'intervallo decorato: il frammento della riga giusta
 comincia sempre lì dentro, al più contenendo solo il proprio a-capo.
 
+Le tabelle sono l'unico posto dove il disegno interviene sulla spaziatura del testo.
+TextKit sa impaginare tabelle vere, ma vuole una cella per paragrafo, mentre qui una
+riga intera è un paragrafo solo. Le colonne si ottengono allora misurando le celle e
+allargando con la crenatura il carattere che precede ciascuna, così che cada al suo
+posto; le barre verticali restano nel testo ma diventano trasparenti, e riappaiono in
+grigio quando il cursore è sulla riga. La riga dei trattini si nasconde come qualunque
+altro marcatore e al suo posto viene disegnato il filetto dell'intestazione. Il file su
+disco non cambia di un byte.
+
 C'è poi una regola che tiene fermo il testo mentre lo scrivi: **la geometria verticale
 di una riga non dipende dal cursore, e nessun tipo di riga aggiunge spazio sopra o
 sotto di sé**. La separazione la danno le righe vuote — che in Markdown sono anche il
@@ -143,7 +153,6 @@ il file. Resta il solo scarto del corpo più grande di un titolo, due punti.
 
 ## Limiti attuali
 
-- Le tabelle sono allineate a spaziatura fissa, non disegnate come griglia.
 - Le immagini `![](…)` sono mostrate come collegamento, non incorporate.
 - I blocchi di codice indentati di quattro spazi non sono riconosciuti come tali
   (servono i delimitatori ` ``` `), per non alterare gli elenchi annidati.
@@ -161,6 +170,5 @@ il file. Resta il solo scarto del corpo più grande di un titolo, due punti.
 - **I marcatori inglobano l'a-capo finale.** Su un documento che termina con una riga
   a capo, ⌘A seguito da ⌘B mette il `**` di chiusura su una riga a sé e l'emfasi non
   si chiude.
-- **Tabelle con delimitatore a trattino singolo** (`| - | - |`) non riconosciute: il
-  controllo conta i trattini dell'intera riga e ne pretende tre, mentre GFM ne chiede
-  uno per cella.
+- Le tabelle non hanno righe di separazione fra le celle, solo il filetto sotto
+  l'intestazione: le colonne si leggono dall'allineamento.

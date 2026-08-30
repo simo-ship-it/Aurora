@@ -266,6 +266,15 @@ final class MarkdownTextView: NSTextView, NSLayoutManagerDelegate {
             }
         }
 
+        // Filetto sotto l'intestazione della tabella, al posto della riga di trattini.
+        storage.enumerateAttribute(.auroraTableRule, in: visible) { value, range, _ in
+            guard value != nil, let row = rows(in: range).first else { return }
+            theme.rule.setFill()
+            NSRect(x: origin.x + theme.surfacePadding,
+                   y: (row.midY - 0.5).rounded(),
+                   width: contentWidth - theme.surfacePadding * 2, height: 1).fill()
+        }
+
         // Barre laterali delle citazioni, a pillola.
         storage.enumerateAttribute(.auroraQuoteDepth, in: visible) { value, range, _ in
             guard let depth = value as? Int, depth > 0, let area = box(for: range) else { return }

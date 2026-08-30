@@ -8,6 +8,8 @@ final class MarkdownStyler: NSObject, NSTextStorageDelegate {
     private var theme: Theme { Theme.current }
 
     private var cachedLines: [LineInfo]?
+    /// Colonne di ogni tabella, indicizzate dalla sua prima riga.
+    private var tableLayouts: [Int: TableLayout] = [:]
     private var activeLines: Set<Int> = []
     private var lastEditedRange: NSRange?
     /// Stato "dentro un blocco di codice" della riga che seguiva la modifica, prima della modifica.
@@ -30,7 +32,10 @@ final class MarkdownStyler: NSObject, NSTextStorageDelegate {
         return parsed
     }
 
-    func invalidateCache() { cachedLines = nil }
+    func invalidateCache() {
+        cachedLines = nil
+        tableLayouts = [:]
+    }
 
     // MARK: - Notifiche di modifica
 
@@ -207,9 +212,9 @@ final class MarkdownStyler: NSObject, NSTextStorageDelegate {
             baseFont = theme.mono
             baseColor = theme.codeText
         case .tableHeader:
-            baseFont = NSFont.monospacedSystemFont(ofSize: theme.monoSize, weight: .semibold)
+            baseFont = NSFont.systemFont(ofSize: theme.bodySize, weight: .semibold)
         case .tableDelimiter, .tableRow:
-            baseFont = theme.mono
+            baseFont = theme.body
         default:
             break
         }
@@ -230,10 +235,25 @@ final class MarkdownStyler: NSObject, NSTextStorageDelegate {
         if line.kind == .tableHeader || line.kind == .tableDelimiter || line.kind == .tableRow {
             attributes[.auroraBlock] = "table"
         }
+        if line.kind == .tableDelimiter { attributes[.auroraTableRule] = true }
         if case .heading(let level) = line.kind { attributes[.kern] = theme.headingTracking(level) }
         if line.quoteDepth > 0 { attributes[.auroraQuoteDepth] = line.quoteDepth }
 
         storage.setAttributes(attributes, range: line.range)
+
+        // --- Tabelle: barre invisibili e celle portate nella loro colonna
+        switch line.kind {
+        case .tableDelimiter:
+            // La riga dei trattini non si legge: al suo posto si disegna il filetto.
+            if !active, line.contentRange.length > 0 {
+                storage.addAttribute(.auroraConceal, value: true, range: line.contentRange)
+            }
+        case .tableHeader, .tableRow:
+            alignTableRow(line, index: index, ns: ns, storage: storage,
+                          font: baseFont, active: active)
+        default:
+            break
+        }
 
         // --- Contenuto inline
         if !isCode, line.contentRange.length > 0, line.kind != .horizontalRule {
@@ -346,6 +366,77 @@ final class MarkdownStyler: NSObject, NSTextStorageDelegate {
     /// così gli sfondi (codice inline, evidenziato) restano allineati al testo.
     /// Restituisce anche lo scostamento di base con cui centrare il testo
     /// nella riga: senza, con interlinee ampie gli sfondi galleggiano più in alto.
+    // MARK: - Tabelle
+
+    private func isTableLine(_ kind: LineKind) -> Bool {
+        kind == .tableHeader || kind == .tableDelimiter || kind == .tableRow
+    }
+
+    /// Le colonne della tabella cui appartiene una riga, misurate una volta sola.
+    private func tableLayout(forLineAt index: Int, ns: NSString) -> TableLayout? {
+        let all = lines
+        guard all.indices.contains(index), isTableLine(all[index].kind) else { return nil }
+
+        var first = index
+        while first > 0, isTableLine(all[first - 1].kind) { first -= 1 }
+        if let cached = tableLayouts[first] { return cached }
+
+        var last = index
+        while last < all.count - 1, isTableLine(all[last + 1].kind) { last += 1 }
+
+        let header = NSFont.systemFont(ofSize: theme.bodySize, weight: .semibold)
+        var rows: [(line: LineInfo, font: NSFont)] = []
+        var delimiter: LineInfo?
+        for i in first...last {
+            switch all[i].kind {
+            case .tableDelimiter: delimiter = all[i]
+            case .tableHeader: rows.append((all[i], header))
+            default: rows.append((all[i], theme.body))
+            }
+        }
+
+        let layout = TableLayout.measure(rows: rows, delimiter: delimiter, in: ns)
+        tableLayouts[first] = layout
+        return layout
+    }
+
+    /// Porta ogni cella all'inizio della sua colonna allargando, con la crenatura,
+    /// il carattere che la precede. Il testo sul disco non cambia di un byte.
+    private func alignTableRow(_ line: LineInfo, index: Int, ns: NSString,
+                               storage: NSTextStorage, font: NSFont, active: Bool) {
+        guard let layout = tableLayout(forLineAt: index, ns: ns) else { return }
+
+        // Le barre restano nel testo ma spariscono alla vista: sono struttura,
+        // non contenuto. Restano larghe quanto sono, e la crenatura ne tiene conto.
+        var position = line.contentRange.location
+        let end = NSMaxRange(line.contentRange)
+        while position < end {
+            if ns.character(at: position) == 124 {
+                storage.addAttribute(.foregroundColor,
+                                     value: active ? theme.syntax : NSColor.clear,
+                                     range: NSRange(location: position, length: 1))
+            }
+            position += 1
+        }
+
+        var added: CGFloat = 0
+        for (column, cell) in TableLayout.cells(of: line, in: ns).enumerated() {
+            guard column < layout.columnStarts.count,
+                  cell.range.location > line.contentRange.location else { continue }
+
+            let width = (cell.text as NSString).size(withAttributes: [.font: font]).width
+            let prefix = NSRange(location: line.contentRange.location,
+                                 length: cell.range.location - line.contentRange.location)
+            let natural = (ns.substring(with: prefix) as NSString)
+                .size(withAttributes: [.font: font]).width
+            let kern = layout.start(ofColumn: column, cellWidth: width) - (natural + added)
+            guard abs(kern) > 0.01 else { continue }
+            storage.addAttribute(.kern, value: kern,
+                                 range: NSRange(location: cell.range.location - 1, length: 1))
+            added += kern
+        }
+    }
+
     /// Invariante: la geometria di una riga non dipende da dove sta il cursore,
     /// e nessun tipo di riga aggiunge spazio *sopra* di sé. Sono le due cose che
     /// farebbero muovere il testo sotto le dita mentre lo si scrive: lo spazio
