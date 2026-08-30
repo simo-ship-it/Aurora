@@ -19,12 +19,24 @@ Il file su disco resta Markdown puro: nessun formato proprietario, nessuna conve
 ## Installare
 
 ```bash
-brew install --cask simo-ship-it/aurora/aurora
+brew install simo-ship-it/aurora/aurora
 ```
 
-Oppure scarica lo `.zip` dai [rilasci](https://github.com/simo-ship-it/Aurora/releases),
-scompattalo e trascina Aurora in Applicazioni. Serve macOS 13 o successivo; il
-pacchetto è universale (Apple silicon e Intel).
+È una formula, non un cask: scarica il sorgente e compila Aurora sulla tua
+macchina, cosa che richiede circa un minuto e i soli Command Line Tools di
+Xcode. Il motivo è Gatekeeper. Aurora non è firmata con un Developer ID Apple —
+serve un'iscrizione a pagamento — quindi una copia *scaricata* verrebbe messa in
+quarantena e rifiutata al primo avvio. Una compilata sul posto non lo è mai.
+
+A ogni [rilascio](https://github.com/simo-ship-it/Aurora/releases) è comunque
+allegato uno `.zip`. Usandolo, macOS bloccherà l'app finché non togli tu il
+contrassegno di quarantena:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Aurora.app
+```
+
+Serve macOS 13 o successivo.
 
 ## Compilare dai sorgenti
 

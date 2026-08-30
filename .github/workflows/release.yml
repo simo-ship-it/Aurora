@@ -93,15 +93,19 @@ jobs:
             echo "## Installazione"
             echo
             echo '```bash'
-            echo "brew install --cask simo-ship-it/aurora/aurora"
+            echo "brew install simo-ship-it/aurora/aurora"
             echo '```'
             echo
-            echo "Oppure scarica \`${{ steps.package.outputs.name }}\`, scompattalo e trascina Aurora in Applicazioni."
+            echo "È una formula: compila sulla tua macchina, e così non incontra la quarantena di macOS."
+            echo
+            echo "In alternativa scarica \`${{ steps.package.outputs.name }}\`, scompattalo e trascina Aurora in Applicazioni."
             echo
             if [ -z "$SIGN_IDENTITY" ]; then
-              echo "> **Questa build non è firmata con un Developer ID.** macOS la bloccherà"
-              echo "> al primo avvio. Per aprirla comunque:"
+              echo "> **L'archivio non è firmato con un Developer ID.** macOS lo bloccherà al"
+              echo "> primo avvio, dicendo che l'app è danneggiata — non lo è: è solo in"
+              echo "> quarantena perché scaricata. Per sbloccarla:"
               echo "> \`xattr -dr com.apple.quarantine /Applications/Aurora.app\`"
+              echo "> Installando con \`brew\` il problema non si pone."
               echo
             fi
             echo "SHA-256: \`${{ steps.package.outputs.sha256 }}\`"

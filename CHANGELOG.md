@@ -25,7 +25,10 @@ installable by someone other than its author.
 - Continuous integration on every push, and a release workflow that builds a
   universal binary (Apple silicon and Intel), signs and notarizes it when the
   credentials are configured, and publishes it with its checksum.
-- A Homebrew cask, and the instructions to serve it from a tap.
+- A Homebrew formula, and the instructions to serve it from a tap. It builds from
+  source on the installing machine rather than shipping a binary: Aurora is not
+  signed with an Apple Developer ID, so a downloaded copy would be quarantined
+  and refused at first launch, while a locally compiled one never is.
 - MIT licence.
 
 ### Changed

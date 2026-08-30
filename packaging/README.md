@@ -1,16 +1,35 @@
 # Distribuzione
 
-## Homebrew
+## Perché una formula e non un cask
 
-Aurora è un'app con interfaccia, quindi si distribuisce come **cask**, non come
-formula.
+Aurora ha un'interfaccia, quindi la strada naturale sarebbe un **cask**: scarica
+l'archivio del rilascio, lo scompatta in Applicazioni, finito.
 
-Il repository ufficiale `homebrew-cask` accetta solo progetti già noti — almeno
-75 stelle, oppure 30 fork, oppure 30 watcher. Un progetto appena pubblicato
-viene rifiutato, e non è un giudizio sul software: serve a tenere fuori i
-pacchetti che nessuno manterrà. Fino ad allora la strada è un tap proprio.
+Il problema è la quarantena. Ogni file scaricato viene marcato da macOS, e
+Gatekeeper lo blocca se l'app non è firmata con un **Developer ID** e
+notarizzata da Apple. Quella firma esiste solo dentro l'Apple Developer Program,
+che costa 99 $ l'anno. Con la firma ad-hoc che lo script di compilazione usa in
+sua assenza il messaggio è tipicamente *"Aurora è danneggiata e non può essere
+aperta"*: la formulazione peggiore possibile, perché suggerisce un download
+corrotto invece di un permesso mancante. Si sblocca con
 
-### Creare il tap (una volta sola)
+```bash
+xattr -dr com.apple.quarantine /Applications/Aurora.app
+```
+
+ma è una cosa che va spiegata a ogni persona che installa.
+
+La quarantena però riguarda i file **scaricati**, non quelli compilati sul
+posto. Una formula che prende il sorgente ed esegue `Scripts/build_app.sh` sulla
+macchina di chi installa aggira il problema all'origine: nessun blocco, nessun
+comando da spiegare. Chi installa da Homebrew ha già i Command Line Tools, che
+sono l'unica cosa che serve, e paga una quarantina di secondi di compilazione.
+
+Se un giorno ci sarà un Developer ID, il cask torna a essere la scelta migliore
+e questa cartella andrà rifatta: il workflow di rilascio sa già firmare e
+notarizzare, e pubblica comunque l'archivio a ogni versione.
+
+## Creare il tap (una volta sola)
 
 Un tap è un normale repository GitHub il cui nome comincia per `homebrew-`:
 
@@ -18,46 +37,53 @@ Un tap è un normale repository GitHub il cui nome comincia per `homebrew-`:
 gh repo create simo-ship-it/homebrew-aurora --public \
   --description "Homebrew tap for Aurora"
 git clone https://github.com/simo-ship-it/homebrew-aurora
-mkdir -p homebrew-aurora/Casks
+mkdir -p homebrew-aurora/Formula
 ```
 
-### A ogni rilascio
+## A ogni rilascio
 
-Dopo che il workflow `Release` ha pubblicato l'archivio:
+Dopo che il workflow `Release` ha pubblicato il tag:
 
 ```bash
-./Scripts/make_cask.sh 0.1.0
-cp packaging/homebrew/aurora.rb ../homebrew-aurora/Casks/aurora.rb
+./Scripts/make_formula.sh 0.1.0
+cp packaging/homebrew/aurora.rb ../homebrew-aurora/Formula/aurora.rb
 cd ../homebrew-aurora && git commit -am "Aurora 0.1.0" && git push
 ```
 
 Da quel momento:
 
 ```bash
-brew install --cask simo-ship-it/aurora/aurora
+brew install simo-ship-it/aurora/aurora
 ```
 
-### Prima di annunciarlo
+E per compilare direttamente da `main`, senza aspettare una versione:
 
 ```bash
-brew audit --cask --online simo-ship-it/aurora/aurora
-brew install --cask simo-ship-it/aurora/aurora
-brew uninstall --cask aurora
+brew install --HEAD simo-ship-it/aurora/aurora
+```
+
+## Prima di annunciarlo
+
+```bash
+brew audit --strict --online simo-ship-it/aurora/aurora
+brew install simo-ship-it/aurora/aurora
+brew test aurora
+brew uninstall aurora
 ```
 
 `brew audit` è severo su cose che si notano solo dopo: la descrizione non deve
-cominciare con "A" o con il nome dell'app, la `livecheck` deve funzionare, i
-percorsi di `zap` devono esistere davvero.
+cominciare con "A" o con il nome dell'app, la licenza dev'essere dichiarata, e
+`url` e `sha256` devono corrispondere davvero.
 
-## Firma e notarizzazione
+Vale la pena provare l'installazione su una macchina che non sia quella di
+sviluppo, o almeno con `HOMEBREW_NO_INSTALL_FROM_API=1`: una formula che compila
+dipende dal toolchain di chi installa, ed è l'unico modo di accorgersi se manca
+qualcosa che qui c'è per abitudine.
 
-Finché l'app non è firmata con un **Developer ID**, chi la scarica trova un
-messaggio che dice che è danneggiata — non che è di uno sviluppatore
-sconosciuto: proprio danneggiata. È il singolo ostacolo che perde più utenti, e
-non si aggira con una nota nel README.
+## Se un giorno ci sarà la firma Apple
 
-Serve l'iscrizione all'Apple Developer Program (99 $ l'anno). Poi, nelle
-impostazioni del repository, questi segreti:
+Nelle impostazioni del repository servono questi segreti, e il workflow di
+rilascio li usa da solo:
 
 | Segreto | Cos'è |
 | --- | --- |
@@ -74,6 +100,5 @@ Per il base64 del certificato:
 base64 -i Certificati.p12 | pbcopy
 ```
 
-Il workflow di rilascio salta firma e notarizzazione se i segreti non ci sono:
-pubblica lo stesso, con un avviso nelle note. Nessuno dei due passaggi va
-aggiunto a mano.
+Senza i segreti il workflow salta firma e notarizzazione: pubblica lo stesso, e
+le note di rilascio avvisano che l'archivio va sbloccato a mano.

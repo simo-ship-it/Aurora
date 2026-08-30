@@ -18,12 +18,24 @@ The file on disk stays plain Markdown: no proprietary format, no conversion.
 ## Install
 
 ```bash
-brew install --cask simo-ship-it/aurora/aurora
+brew install simo-ship-it/aurora/aurora
 ```
 
-Or download the `.zip` from [Releases](https://github.com/simo-ship-it/Aurora/releases),
-unpack it, and drag Aurora into Applications. Requires macOS 13 or later; the
-build is universal (Apple silicon and Intel).
+That is a formula, not a cask: it fetches the source and builds Aurora on your
+own machine, which takes about a minute and needs only Xcode's Command Line
+Tools. The reason is Gatekeeper. Aurora is not signed with an Apple Developer
+ID — that requires a paid membership — so a *downloaded* copy would be
+quarantined and refused at first launch. Something compiled locally never is.
+
+A `.zip` is attached to every [release](https://github.com/simo-ship-it/Aurora/releases)
+as well. If you use it, macOS will block the app until you clear the quarantine
+flag yourself:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Aurora.app
+```
+
+Requires macOS 13 or later.
 
 ## Build from source
 
