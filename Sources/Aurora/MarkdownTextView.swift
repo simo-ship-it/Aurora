@@ -413,8 +413,13 @@ final class MarkdownTextView: NSTextView, NSLayoutManagerDelegate {
         }
     }
 
+    /// ⇧Tab rientra come Tab, per scelta.
+    ///
+    /// Senza questo override il comportamento sarebbe un caso: l'evento arriva
+    /// come `insertTab:` e quindi rientra, ma se un giorno arrivasse davvero come
+    /// backtab il rientro si ridurrebbe di colpo. Meglio dirlo esplicitamente.
     override func insertBacktab(_ sender: Any?) {
-        shiftIndent(by: -2)
+        insertTab(sender)
     }
 
     private func shiftIndent(by amount: Int) {

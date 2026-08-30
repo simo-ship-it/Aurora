@@ -45,7 +45,8 @@ file dal Finder e il menu documenti funzionano solo eseguendo il bundle `.app`.
 
 - **Invio** continua l'elenco, la numerazione o la citazione della riga corrente;
   su un elemento vuoto esce dall'elenco.
-- **Tab / ⇧Tab** aumentano e riducono il rientro degli elementi.
+- **Tab** e **⇧Tab** aumentano entrambi il rientro degli elementi. Per ridurlo si
+  tolgono gli spazi a mano: è una scelta, non una dimenticanza.
 - **⌘B**, **⌘I**, **⇧⌘X**, **⇧⌘H** applicano e tolgono grassetto, corsivo,
   barrato ed evidenziato.
 - **⌘1 … ⌘6** impostano il livello del titolo, **⌘0** torna a paragrafo.
@@ -163,8 +164,6 @@ il file. Resta il solo scarto del corpo più grande di un titolo, due punti.
 
 ## Difetti noti
 
-- **⇧Tab aumenta il rientro invece di ridurlo.** `insertBacktab` è implementato
-  correttamente ma non viene raggiunto: l'evento arriva come `insertTab:`.
 - **⌘` , ⇧⌘' e ⇧⌘- non rispondono** con tastiere non statunitensi. I comandi
   funzionano dal menu Formato.
 - **I marcatori inglobano l'a-capo finale.** Su un documento che termina con una riga
