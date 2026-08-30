@@ -1,0 +1,56 @@
+name: Bug report
+description: Something in Aurora does not behave as it should
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happens
+      description: And what you expected instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: markdown
+    attributes:
+      label: Markdown that reproduces it
+      description: >
+        The smallest document that shows the problem. Whitespace and trailing
+        line breaks matter more often than they look, so paste it exactly.
+      render: markdown
+    validations:
+      required: true
+
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      placeholder: "14.5"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: architecture
+    attributes:
+      label: Mac
+      options:
+        - Apple silicon
+        - Intel
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Aurora version
+      description: From the Aurora menu → About Aurora, or the commit if you built it yourself.
+    validations:
+      required: true
+
+  - type: textarea
+    id: screenshot
+    attributes:
+      label: Screenshot
+      description: >
+        For anything about how text is drawn or laid out, a screenshot settles in
+        a second what a description takes paragraphs to approximate.

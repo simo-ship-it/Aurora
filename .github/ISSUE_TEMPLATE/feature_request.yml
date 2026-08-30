@@ -1,0 +1,29 @@
+name: Feature request
+description: Suggest something Aurora should do
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do
+      description: >
+        The situation, not the solution. Aurora deliberately leaves out a lot,
+        and knowing what you were writing when you missed this is what decides
+        whether it belongs.
+    validations:
+      required: true
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you have in mind
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: acknowledged
+    attributes:
+      label: Before submitting
+      options:
+        - label: I read "Current limits" in the README, and this is not already listed there as a deliberate omission
+          required: true

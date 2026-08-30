@@ -1,173 +1,250 @@
 # Aurora
 
-Editor Markdown nativo per macOS, scritto in Swift e AppKit. Come Typora, mostra il
-testo già formattato **mentre lo scrivi**: non c'è un riquadro di anteprima separato,
-c'è una sola area di scrittura in cui i marcatori Markdown si nascondono quando il
-cursore non è sulla riga e ricompaiono appena ci torni.
+[![CI](https://github.com/simo-ship-it/Aurora/actions/workflows/ci.yml/badge.svg)](https://github.com/simo-ship-it/Aurora/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Il file su disco resta Markdown puro: nessun formato proprietario, nessuna conversione.
+A native Markdown editor for macOS, written in Swift and AppKit. Like Typora, it
+shows text already formatted **as you write it**: there is no separate preview
+pane, just one writing surface where Markdown markers hide when the cursor
+leaves the line and come back the moment you return to it.
 
-## Compilare ed eseguire
+The file on disk stays plain Markdown: no proprietary format, no conversion.
 
-Servono solo i Command Line Tools di Xcode (niente Xcode completo).
+*[Leggimi in italiano](README.it.md)*
+
+<!-- TODO: add a screenshot or a short GIF here — for an editor that sells
+     itself on how text looks while you type, the feature table is not enough. -->
+
+## Install
+
+```bash
+brew install --cask simo-ship-it/aurora/aurora
+```
+
+Or download the `.zip` from [Releases](https://github.com/simo-ship-it/Aurora/releases),
+unpack it, and drag Aurora into Applications. Requires macOS 13 or later; the
+build is universal (Apple silicon and Intel).
+
+## Build from source
+
+Only Xcode's Command Line Tools are needed — not the full Xcode.
 
 ```bash
 ./Scripts/build_app.sh
 ```
 
-Lo script compila con SwiftPM e assembla `Aurora.app` nella cartella del progetto.
-Poi basta aprirla:
+The script compiles with SwiftPM and assembles `Aurora.app` in the project
+folder. Then just open it:
 
 ```bash
 open Aurora.app Esempio.md
 ```
 
-Per lo sviluppo quotidiano è comodo anche `swift build` da solo, ma l'apertura dei
-file dal Finder e il menu documenti funzionano solo eseguendo il bundle `.app`.
+For everyday development `swift build` alone is convenient too, but opening
+files from Finder and the document menus only work when running the `.app`
+bundle.
 
-## Cosa supporta
+## What it supports
 
-| Elemento | Resa |
+| Element | Rendering |
 | --- | --- |
-| Titoli `#` … `######` | Sei livelli, con dimensioni dedicate |
-| `**grassetto**`, `*corsivo*`, `***entrambi***` | Font reale, marcatori nascosti |
-| `~~barrato~~`, `==evidenziato==` | Barratura e sfondo giallo |
-| `` `codice inline` `` | Font a spaziatura fissa con sfondo |
-| Blocchi ` ``` ` e `~~~` | Riquadro grigio, righe di delimitazione nascoste |
-| Citazioni `>` (anche annidate) | Barra laterale e rientro per livello |
-| Elenchi `-`, `*`, `+`, `1.`, `1)` | Pallini disegnati, rientri automatici |
-| Task list `- [ ]` / `- [x]` | Casella cliccabile, voce completata barrata |
-| `[testo](url)` e `<url>` | Collegamento colorato, apribile con ⌘-clic |
-| `---`, `***`, `___` | Linea orizzontale disegnata |
-| Tabelle `\| a \| b \|` | Colonne allineate, intestazione in grassetto, allineamenti `:---:` |
+| Headings `#` … `######` | Six levels, each with its own size |
+| `**bold**`, `*italic*`, `***both***` | Real font, markers hidden |
+| `~~strikethrough~~`, `==highlight==` | Struck through, yellow background |
+| `` `inline code` `` | Monospaced with a background |
+| ` ``` ` and `~~~` blocks | Grey surface, delimiter lines hidden |
+| Blockquotes `>` (nested too) | Side bar and indent per level |
+| Lists `-`, `*`, `+`, `1.`, `1)` | Drawn bullets, automatic indents |
+| Task lists `- [ ]` / `- [x]` | Clickable box, completed item struck through |
+| `[text](url)` and `<url>` | Coloured link, ⌘-click to open |
+| `---`, `***`, `___` | Drawn horizontal rule |
+| Tables `\| a \| b \|` | Aligned columns, bold header, `:---:` alignments |
 
-## Scrittura
+## Writing
 
-- **Invio** continua l'elenco, la numerazione o la citazione della riga corrente;
-  su un elemento vuoto esce dall'elenco.
-- **Tab** e **⇧Tab** aumentano entrambi il rientro degli elementi. Per ridurlo si
-  tolgono gli spazi a mano: è una scelta, non una dimenticanza.
-- **⌘B**, **⌘I**, **⇧⌘X**, **⇧⌘H** applicano e tolgono grassetto, corsivo,
-  barrato ed evidenziato.
-- **⌘1 … ⌘6** impostano il livello del titolo, **⌘0** torna a paragrafo.
-- **⇧⌘U** elenco puntato, **⇧⌘T** elenco di attività, **⌥⌘K** blocco di codice,
-  **⌘K** collegamento.
-- **/** apre il menu dei comandi (vedi sotto).
-- **⌘F** cerca nel documento, con la barra di ricerca di sistema.
-- Un clic su una casella `[ ]` la spunta; **⌘-clic** su un collegamento lo apre.
+- **Return** continues the list, the numbering or the blockquote of the current
+  line; on an empty item it leaves the list.
+- **Tab** and **⇧Tab** both increase the indent of list items. To decrease it
+  you remove the spaces by hand: that is a choice, not an oversight.
+- **⌘B**, **⌘I**, **⇧⌘X**, **⇧⌘H** apply and remove bold, italic,
+  strikethrough and highlight.
+- **⌘1 … ⌘6** set the heading level, **⌘0** returns to paragraph.
+- **⇧⌘U** bulleted list, **⇧⌘T** task list, **⌥⌘K** code block, **⌘K** link.
+- **/** opens the command menu (see below).
+- **⌘F** searches the document, using the system find bar.
+- Clicking a `[ ]` box ticks it; **⌘-click** on a link opens it.
 
-Codice inline, citazione e linea orizzontale si prendono dal menu **Formato**: le loro
-scorciatoie (⌘`, ⇧⌘', ⇧⌘-) sono dichiarate su tasti di punteggiatura che con layout
-non statunitensi — l'italiano fra questi — stanno altrove, quindi non rispondono.
+Inline code, blockquote and horizontal rule are reached from the **Format**
+menu: their shortcuts (⌘`, ⇧⌘', ⇧⌘-) are declared on punctuation keys that sit
+elsewhere on non-US layouts — Italian among them — so they do not respond.
 
-Annulla/ripristina, salvataggio automatico, versioni, documenti recenti e schede
-delle finestre sono quelli standard di macOS.
+Undo/redo, autosave, versions, recent documents and window tabs are the standard
+macOS ones.
 
-## Menu dei comandi
+## Command menu
 
-Digitando **/** a inizio riga, o dopo uno spazio, si apre un elenco di tutti i comandi
-di formattazione: titoli, elenchi, citazione, blocco di codice, linea orizzontale,
-collegamento, grassetto, corsivo, barrato, evidenziato, codice inline. Continuando a
-scrivere si filtra, **↑ ↓** scorrono, **Invio** o un clic applicano, **Esc** chiude.
-Il testo digitato dopo la barra sparisce insieme al menu.
+Typing **/** at the start of a line, or after a space, opens a list of every
+formatting command: headings, lists, blockquote, code block, horizontal rule,
+link, bold, italic, strikethrough, highlight, inline code. Typing on filters the
+list, **↑ ↓** move through it, **Return** or a click applies, **Esc** dismisses.
+Whatever you typed after the slash disappears along with the menu.
 
-Si filtra sul nome ma anche sulla sintassi: `/###` trova Titolo 3 e `/---` la linea
-orizzontale, per chi il Markdown lo conosce già.
+Filtering matches the name but also the syntax: `/###` finds Heading 3 and
+`/---` the horizontal rule, for those who already know Markdown.
 
-Dentro una parola la barra resta una barra — `http://esempio.it` e `e/o` non aprono
-niente — e dentro un blocco di codice il menu non compare affatto.
+Inside a word a slash stays a slash — `http://example.com` and `and/or` open
+nothing — and inside a code block the menu does not appear at all.
 
-Ogni voce richiama il comando che esiste già nel menu Formato: il menu dei comandi è
-un modo per raggiungerli scrivendo, non una seconda implementazione.
+Every entry calls the command that already exists in the Format menu: the
+command menu is a way to reach them by typing, not a second implementation.
 
-## Cartella di lavoro
+## Working folder
 
-Il pulsante a forma di cartella in barra del titolo apre l'albero della cartella su cui
-stai lavorando: le sottocartelle si aprono sul posto, i file si aprono con un clic.
-Per sceglierne un'altra, **⌘⇧O** oppure un clic sul nome della cartella in cima al
-pannello.
+The folder button in the title bar opens the tree of the folder you are working
+in: subfolders expand in place, files open with one click. To pick another one,
+**⌘⇧O** or a click on the folder name at the top of the panel.
 
-I figli di una cartella si leggono dal disco solo quando la si apre, quindi un albero
-profondo non costa nulla finché resta chiuso. La cartella scelta e quali sono aperte
-sopravvivono alla chiusura dell'app. Se non ne hai ancora scelta una, il pannello
-adotta la cartella del primo documento che apri.
+A folder's children are read from disk only when it is expanded, so a deep tree
+costs nothing while it stays closed. The chosen folder and which ones are open
+survive quitting the app. If you have not chosen one yet, the panel adopts the
+folder of the first document you open.
 
-Elenca solo `.md`, `.markdown`, `.mdown`, `.mkd`, `.mdtext` e `.txt`: serve a scrivere,
-non a esplorare il disco. La prima volta che punti la cartella dentro Documenti,
-Scrivania o Download, macOS chiede il permesso di accedervi.
+It lists only `.md`, `.markdown`, `.mdown`, `.mkd`, `.mdtext` and `.txt`: it is
+there to write, not to browse the disk. The first time you point it inside
+Documents, Desktop or Downloads, macOS asks for permission to read them.
 
-## Com'è fatto
+## Settings
+
+**⌘,** opens Settings: typeface, text size, line spacing, column width, and
+whether the app follows the system appearance or stays light or dark. The
+sliders show the value while you drag them but only commit when you let go —
+every change restyles every open document, and doing that on each notch of the
+slider would make the drag stutter on long files.
+
+The default typeface is the system one, which is not just one family among the
+others: it follows optical sizing and the accessibility settings. Code stays
+monospaced whatever you choose, because lining up in columns is the whole reason
+it is monospaced.
+
+## Language
+
+Aurora follows the system language, and falls back to English. It ships with
+English, Italian, Spanish, French, German, Brazilian Portuguese, Japanese and
+Simplified Chinese.
+
+Translations live in one table, `Scripts/make_strings.py`, rather than scattered
+across eight files: adding a phrase means adding one line per language, and a
+language that forgets it is caught by `Scripts/check_strings.py`, which CI runs
+on every push. The key is the English sentence itself, so a string that has not
+been translated yet shows up in English instead of exposing an internal name.
+
+## How it is built
 
 ```
+Sources/AuroraCore/
+  MarkdownParser.swift     block and inline analysis (indices only, no copying)
+  MarkdownEditing.swift    text edits that are pure index arithmetic
+
 Sources/Aurora/
-  main.swift               avvio dell'applicazione
-  AppDelegate.swift        menu e ciclo di vita
-  MarkdownDocument.swift   NSDocument: lettura e scrittura UTF-8
-  EditorViewController.swift  area di scrittura, colonna centrata, scorrimento
-  MarkdownTextView.swift   NSTextView: glifi nascosti, decorazioni, comandi di editing
-  MarkdownParser.swift     analisi di blocchi e elementi inline (solo indici, nessuna copia)
-  MarkdownStyler.swift     dal risultato dell'analisi agli attributi del testo
-  SlashMenu.swift          il menu dei comandi che si apre con "/"
-  TableLayout.swift        celle, colonne e allineamenti delle tabelle
-  Workspace.swift          cartella di lavoro e stato dell'albero, su UserDefaults
-  WorkspaceBrowser.swift   pulsante in barra del titolo e albero dei file
-  Theme.swift              font, colori chiari/scuri, metriche
+  main.swift               application startup
+  AppDelegate.swift        menus and life cycle
+  Localization.swift       one lookup, English keys
+  Settings.swift           preferences, and the only place the theme is built
+  SettingsWindowController.swift  the Settings window
+  MarkdownDocument.swift   NSDocument: UTF-8 reading and writing
+  EditorViewController.swift  writing area, centred column, scrolling
+  MarkdownTextView.swift   NSTextView: hidden glyphs, decorations, editing commands
+  MarkdownStyler.swift     from the analysis to the text attributes
+  SlashMenu.swift          the command menu that opens with "/"
+  TableLayout.swift        cells, columns and alignments of tables
+  Workspace.swift          working folder and tree state, on UserDefaults
+  WorkspaceBrowser.swift   title bar button and file tree
+  Theme.swift              fonts, light/dark colours, metrics
+
+Sources/AuroraCheck/       the tests (see below)
 ```
 
-Il punto delicato è nascondere la sintassi senza toccare il testo. Aurora usa lo
-stack TextKit 1 e, tramite il delegato del layout manager, assegna il glifo nullo ai
-caratteri marcati con un attributo interno: i marcatori restano nel documento ma non
-occupano spazio. Quando la selezione entra in una riga, l'attributo viene tolto e i
-marcatori riappaiono in grigio.
+`AuroraCore` is a module of its own, and imports only Foundation. That boundary
+is not bureaucracy: it is how the compiler holds the parser to what it promises —
+read the text, return indices, know nothing about fonts, colours or views. It is
+also what makes it testable on its own.
 
-Per restare fluido su file grandi, lo stile non viene ricalcolato ovunque a ogni
-tasto: si aggiornano le righe modificate, quelle che entrano o escono dalla selezione
-e quelle che compaiono scorrendo. L'unico caso in cui serve andare oltre è l'apertura
-o la chiusura di un blocco di codice, che cambia l'aspetto di tutto ciò che segue: lo
-styler se ne accorge confrontando lo stato dei blocchi prima e dopo la modifica.
+The delicate part is hiding the syntax without touching the text. Aurora uses
+the TextKit 1 stack and, through the layout manager delegate, assigns the null
+glyph to characters carrying an internal attribute: the markers stay in the
+document but take up no space. When the selection enters a line, the attribute
+is removed and the markers reappear in grey.
 
-Le decorazioni disegnate — il riquadro del codice, la barra delle citazioni, la
-linea orizzontale, i segni di elenco — non chiedono mai al layout dove stia il glifo
-di un carattere. Non si può: i caratteri nascosti hanno glifo nullo, e il layout li
-attribuisce al frammento della riga *precedente*, per cui ogni decorazione finirebbe
-una riga più su. Si enumerano invece i frammenti di riga inquadrati e si tengono
-quelli che **cominciano** dentro l'intervallo decorato: il frammento della riga giusta
-comincia sempre lì dentro, al più contenendo solo il proprio a-capo.
+To stay fluid on large files, styling is not recomputed everywhere on every
+keystroke: it updates the lines that changed, those entering or leaving the
+selection, and those appearing as you scroll. The only case that needs more is
+opening or closing a code fence, which changes the look of everything that
+follows: the styler notices by comparing the fence state before and after the
+edit.
 
-Le tabelle sono l'unico posto dove il disegno interviene sulla spaziatura del testo.
-TextKit sa impaginare tabelle vere, ma vuole una cella per paragrafo, mentre qui una
-riga intera è un paragrafo solo. Le colonne si ottengono allora misurando le celle e
-allargando con la crenatura il carattere che precede ciascuna, così che cada al suo
-posto; le barre verticali restano nel testo ma diventano trasparenti, e riappaiono in
-grigio quando il cursore è sulla riga. La riga dei trattini si nasconde come qualunque
-altro marcatore e al suo posto viene disegnato il filetto dell'intestazione. Il file su
-disco non cambia di un byte.
+The drawn decorations — the code surface, the quote bar, the horizontal rule,
+the list markers — never ask the layout where a character's glyph is. They
+cannot: hidden characters have the null glyph, and the layout attributes them to
+the *previous* line's fragment, so every decoration would land one line too high.
+Instead the visible line fragments are enumerated and the ones that **begin**
+inside the decorated range are kept: the fragment of the right line always begins
+in there, at most containing only its own line break.
 
-C'è poi una regola che tiene fermo il testo mentre lo scrivi: **la geometria verticale
-di una riga non dipende dal cursore, e nessun tipo di riga aggiunge spazio sopra o
-sotto di sé**. La separazione la danno le righe vuote — che in Markdown sono anche il
-modo in cui la separazione è scritta nel file. Senza questo vincolo il testo scappa da
-sotto le dita: lo spazio nascerebbe nell'istante in cui la riga cambia natura, cioè
-mentre ci stai ancora scrivendo dentro. Per questo `paragraphStyle` non riceve lo stato
-di selezione: il vincolo lo fa rispettare il compilatore, non la memoria di chi tocca
-il file. Resta il solo scarto del corpo più grande di un titolo, due punti.
+Tables are the only place where drawing interferes with text spacing. TextKit
+can lay out real tables, but it wants one cell per paragraph, whereas here a
+whole row is a single paragraph. Columns are obtained instead by measuring the
+cells and widening, with kerning, the character preceding each one, so that it
+falls into place; the vertical bars stay in the text but become transparent, and
+reappear in grey when the cursor is on the line. The row of dashes hides like any
+other marker and the header rule is drawn in its place. The file on disk does not
+change by a single byte.
 
-## Limiti attuali
+Then there is a rule that keeps the text still while you write: **a line's
+vertical geometry does not depend on the cursor, and no kind of line adds space
+above or below itself**. Separation comes from blank lines — which in Markdown
+are also how separation is written in the file. Without this constraint the text
+runs out from under your fingers: the space would appear the instant the line
+changes nature, that is, while you are still writing inside it. This is why
+`paragraphStyle` is not given the selection state: the constraint is enforced by
+the compiler, not by the memory of whoever touches the file. All that remains is
+the extra body height of a heading, two points.
 
-- Le immagini `![](…)` sono mostrate come collegamento, non incorporate.
-- I blocchi di codice indentati di quattro spazi non sono riconosciuti come tali
-  (servono i delimitatori ` ``` `), per non alterare gli elenchi annidati.
-- Nessuna evidenziazione della sintassi dentro i blocchi di codice.
-- Titoli in stile setext (sottolineati con `===`) non riconosciuti.
-- Aprire un recinto ` ``` ` senza chiuderlo rende codice tutto il resto del documento,
-  come vuole il Markdown: il testo sotto si riorganizza finché non lo chiudi.
+## Tests
 
-## Difetti noti
+```bash
+swift run AuroraCheck
+```
 
-- **⌘` , ⇧⌘' e ⇧⌘- non rispondono** con tastiere non statunitensi. I comandi
-  funzionano dal menu Formato.
-- **I marcatori inglobano l'a-capo finale.** Su un documento che termina con una riga
-  a capo, ⌘A seguito da ⌘B mette il `**` di chiusura su una riga a sé e l'emfasi non
-  si chiude.
-- Le tabelle non hanno righe di separazione fra le celle, solo il filetto sotto
-  l'intestazione: le colonne si leggono dall'allineamento.
+The tests are an executable rather than a test target because XCTest and
+swift-testing ship with Xcode, while building Aurora needs only the Command Line
+Tools: tying the tests to Xcode would mean they do not run on the machine where
+the app is developed. They cover the parser — headings, lists, task boxes,
+blockquotes, fences, tables, document edges — and the index arithmetic behind the
+editing commands.
+
+## Current limits
+
+- Images `![](…)` are shown as links, not embedded.
+- Code blocks indented by four spaces are not recognised as such (the fence
+  delimiters are required), so as not to disturb nested lists.
+- No syntax highlighting inside code blocks.
+- Setext headings (underlined with `===`) are not recognised.
+- Opening a ` ``` ` fence without closing it turns the rest of the document into
+  code, as Markdown intends: the text below reflows until you close it.
+
+## Known defects
+
+- **⌘` , ⇧⌘' and ⇧⌘- do not respond** on non-US keyboards. The commands work
+  from the Format menu.
+- Tables have no separating lines between cells, only the rule under the header:
+  the columns are read from the alignment.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Bug reports and pull requests are
+welcome; the [issue templates](.github/ISSUE_TEMPLATE) ask for the few things
+that usually turn out to matter.
+
+## License
+
+[MIT](LICENSE) © 2026 Simone Billeri.

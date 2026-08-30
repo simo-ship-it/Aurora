@@ -1,0 +1,30 @@
+name: Translation
+description: Fix a translation, or offer a new language
+labels: ["translation"]
+body:
+  - type: input
+    id: language
+    attributes:
+      label: Language
+      placeholder: "Nederlands (nl)"
+    validations:
+      required: true
+
+  - type: textarea
+    id: corrections
+    attributes:
+      label: Corrections
+      description: >
+        The English key and what it should say. Aurora tries to use the wording
+        Apple already uses in that language for the same menu item, so that the
+        menus read like the rest of the system.
+      placeholder: |
+        "Save As…" → currently "…", should be "…"
+    validations:
+      required: true
+
+  - type: markdown
+    attributes:
+      value: >
+        A pull request is welcome too: everything lives in one table in
+        `Scripts/make_strings.py`. See CONTRIBUTING.md.
