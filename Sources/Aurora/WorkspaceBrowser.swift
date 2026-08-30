@@ -18,10 +18,10 @@ final class WorkspaceButtonController: NSTitlebarAccessoryViewController {
         button.isBordered = false
         button.bezelStyle = .regularSquare
         button.image = NSImage(systemSymbolName: "folder",
-                               accessibilityDescription: "Cartella di lavoro")
+                               accessibilityDescription: localized("Working folder"))
         button.imagePosition = .imageOnly
         button.contentTintColor = Theme.current.quoteText
-        button.toolTip = "File della cartella di lavoro"
+        button.toolTip = localized("Files in the working folder")
         button.target = self
         button.action = #selector(toggle(_:))
         button.translatesAutoresizingMaskIntoConstraints = false
@@ -159,7 +159,7 @@ final class WorkspaceBrowserViewController: NSViewController,
         header.imageHugsTitle = true
         header.alignment = .left
         header.contentTintColor = theme.quoteText
-        header.toolTip = "Scegli la cartella di lavoro"
+        header.toolTip = localized("Choose the working folder")
         header.target = self
         header.action = #selector(chooseFolder(_:))
         header.translatesAutoresizingMaskIntoConstraints = false
@@ -241,11 +241,11 @@ final class WorkspaceBrowserViewController: NSViewController,
         let workspace = Workspace.shared
         roots = workspace.folder.map(WorkspaceNode.contents(of:)) ?? []
 
-        setHeaderTitle(workspace.folder?.lastPathComponent ?? "Nessuna cartella")
+        setHeaderTitle(workspace.folder?.lastPathComponent ?? localized("No Folder"))
         if workspace.folder == nil {
-            placeholder.stringValue = "Premi il nome qui sopra per scegliere una cartella."
+            placeholder.stringValue = localized("Click the name above to choose a folder.")
         } else if roots.isEmpty {
-            placeholder.stringValue = "Questa cartella non contiene documenti Markdown."
+            placeholder.stringValue = localized("This folder contains no Markdown documents.")
         } else {
             placeholder.stringValue = ""
         }

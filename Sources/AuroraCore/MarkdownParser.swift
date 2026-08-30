@@ -1,8 +1,13 @@
 import Foundation
 
+// Questo file è un modulo a sé, e importa solo Foundation. Il confine non è
+// burocrazia: è il modo in cui il compilatore tiene fede a quello che il
+// parser promette — leggere il testo e restituire indici, senza sapere nulla
+// di font, colori o viste. È anche ciò che lo rende verificabile da solo.
+
 // MARK: - Modello
 
-enum LineKind: Equatable {
+public enum LineKind: Equatable {
     case blank
     case paragraph
     case heading(level: Int)
@@ -16,47 +21,49 @@ enum LineKind: Equatable {
     case tableRow
 }
 
-struct LineInfo {
-    var range: NSRange          // riga completa, terminatore incluso
-    var contentsEnd: Int        // fine del testo, terminatore escluso
-    var contentRange: NSRange   // testo dopo i prefissi di blocco (per il parsing inline)
-    var kind: LineKind = .paragraph
-    var quoteDepth: Int = 0
-    var listIndent: Int = 0     // livello di rientro dell'elenco (0, 1, 2, …)
-    var markers: [NSRange] = [] // sintassi di blocco da nascondere/attenuare
-    var bulletRange: NSRange?   // il carattere -, * o +
-    var orderedRange: NSRange?  // "1." di un elenco numerato
-    var listMarkerText = ""     // "-" oppure "1." — serve a continuare l'elenco con Invio
-    var checkboxRange: NSRange? // "[ ]" oppure "[x]"
-    var checkboxChecked = false
-    var isInsideFence = false
+public struct LineInfo {
+    public var range: NSRange          // riga completa, terminatore incluso
+    public var contentsEnd: Int        // fine del testo, terminatore escluso
+    public var contentRange: NSRange   // testo dopo i prefissi di blocco (per il parsing inline)
+    public var kind: LineKind = .paragraph
+    public var quoteDepth: Int = 0
+    public var listIndent: Int = 0     // livello di rientro dell'elenco (0, 1, 2, …)
+    public var markers: [NSRange] = [] // sintassi di blocco da nascondere/attenuare
+    public var bulletRange: NSRange?   // il carattere -, * o +
+    public var orderedRange: NSRange?  // "1." di un elenco numerato
+    public var listMarkerText = ""     // "-" oppure "1." — serve a continuare l'elenco con Invio
+    public var checkboxRange: NSRange? // "[ ]" oppure "[x]"
+    public var checkboxChecked = false
+    public var isInsideFence = false
 }
 
-struct InlineStyle: OptionSet {
-    let rawValue: Int
-    static let bold      = InlineStyle(rawValue: 1 << 0)
-    static let italic    = InlineStyle(rawValue: 1 << 1)
-    static let strike    = InlineStyle(rawValue: 1 << 2)
-    static let code      = InlineStyle(rawValue: 1 << 3)
-    static let link      = InlineStyle(rawValue: 1 << 4)
-    static let image     = InlineStyle(rawValue: 1 << 5)
-    static let highlight = InlineStyle(rawValue: 1 << 6)
+public struct InlineStyle: OptionSet {
+    public let rawValue: Int
+    public init(rawValue: Int) { self.rawValue = rawValue }
+
+    public static let bold      = InlineStyle(rawValue: 1 << 0)
+    public static let italic    = InlineStyle(rawValue: 1 << 1)
+    public static let strike    = InlineStyle(rawValue: 1 << 2)
+    public static let code      = InlineStyle(rawValue: 1 << 3)
+    public static let link      = InlineStyle(rawValue: 1 << 4)
+    public static let image     = InlineStyle(rawValue: 1 << 5)
+    public static let highlight = InlineStyle(rawValue: 1 << 6)
 }
 
-struct InlineRun {
-    var range: NSRange
-    var style: InlineStyle
-    var url: String?
+public struct InlineRun {
+    public var range: NSRange
+    public var style: InlineStyle
+    public var url: String?
 }
 
-struct InlineResult {
-    var runs: [InlineRun] = []
-    var markers: [NSRange] = []
+public struct InlineResult {
+    public var runs: [InlineRun] = []
+    public var markers: [NSRange] = []
 }
 
 // MARK: - Parser
 
-enum MarkdownParser {
+public enum MarkdownParser {
 
     private static let space: unichar = 0x20
     private static let tab: unichar = 0x09
@@ -90,7 +97,7 @@ enum MarkdownParser {
     // MARK: Blocchi
 
     /// Analizza l'intero documento riga per riga. È una singola passata lineare.
-    static func parse(_ ns: NSString) -> [LineInfo] {
+    public static func parse(_ ns: NSString) -> [LineInfo] {
         var lines: [LineInfo] = []
         var index = 0
         var fenceChar: unichar = 0
@@ -409,7 +416,7 @@ enum MarkdownParser {
 
     // MARK: Inline
 
-    static func parseInline(_ ns: NSString, range: NSRange) -> InlineResult {
+    public static func parseInline(_ ns: NSString, range: NSRange) -> InlineResult {
         var out = InlineResult()
         guard range.length > 0 else { return out }
         parseInline(ns, range: range, style: [], url: nil, into: &out)

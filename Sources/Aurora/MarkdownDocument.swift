@@ -1,4 +1,5 @@
 import AppKit
+import AuroraCore
 import UniformTypeIdentifiers
 
 final class MarkdownDocument: NSDocument {
@@ -10,12 +11,18 @@ final class MarkdownDocument: NSDocument {
 
     override func makeWindowControllers() {
         let editor = EditorViewController()
+        // Una finestra guidata da un view controller prende la misura da lui, e
+        // un'area di scorrimento non ne dichiara alcuna: senza questa riga la
+        // finestra si apre grande quanto il proprio minimo consentito — cosa che
+        // si vede solo al primo avvio, finché nessuna misura è stata salvata.
+        editor.preferredContentSize = EditorViewController.preferredSize
         self.editor = editor
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 900, height: 760),
+            contentRect: NSRect(origin: .zero, size: EditorViewController.preferredSize),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered, defer: false)
+
         // La barra del titolo si fonde con la pagina, ma il nome del documento
         // e l'icona-proxy restano: servono per rinominare e trascinare il file.
         window.titlebarAppearsTransparent = true
@@ -24,6 +31,7 @@ final class MarkdownDocument: NSDocument {
         window.backgroundColor = Theme.current.background
         window.minSize = NSSize(width: 420, height: 320)
         window.contentViewController = editor
+        window.center()
         window.setFrameAutosaveName("AuroraEditorWindow")
         window.tabbingMode = .preferred
         window.addTitlebarAccessoryViewController(WorkspaceButtonController())

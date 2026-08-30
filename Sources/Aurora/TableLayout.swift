@@ -1,4 +1,5 @@
 import AppKit
+import AuroraCore
 
 /// Le colonne di una tabella Markdown, misurate una volta per tutta la tabella.
 ///

@@ -1,4 +1,5 @@
 import AppKit
+import AuroraCore
 
 final class MarkdownTextView: NSTextView, NSLayoutManagerDelegate {
 
@@ -35,12 +36,18 @@ final class MarkdownTextView: NSTextView, NSLayoutManagerDelegate {
         isHorizontallyResizable = false
         autoresizingMask = [.width]
         drawsBackground = true
-        backgroundColor = theme.background
-        insertionPointColor = theme.insertionPoint
         textContainerInset = NSSize(width: 0, height: theme.topInset)
         defaultParagraphStyle = nil
-        typingAttributes = [.font: theme.body, .foregroundColor: theme.text]
         maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        applyTheme()
+    }
+
+    /// Le sole proprietà che dipendono dal tema, riunite perché un cambio nelle
+    /// impostazioni possa riapplicarle senza ricostruire la vista.
+    func applyTheme() {
+        backgroundColor = theme.background
+        insertionPointColor = theme.insertionPoint
+        typingAttributes = [.font: theme.body, .foregroundColor: theme.text]
     }
 
     override var acceptsFirstResponder: Bool { true }
@@ -469,7 +476,9 @@ final class MarkdownTextView: NSTextView, NSLayoutManagerDelegate {
 
     private func wrapSelection(with marker: String) {
         let ns = string as NSString
-        let selection = selectedRange()
+        // Lo spazio e gli a capo ai bordi della selezione restano fuori: dentro
+        // i marcatori impedirebbero all'emfasi di chiudersi.
+        let selection = MarkdownEditing.emphasisRange(in: ns, selection: selectedRange())
         let markerLength = marker.utf16.count
 
         // Se la selezione è già racchiusa dal marcatore, lo rimuove.
@@ -561,7 +570,7 @@ final class MarkdownTextView: NSTextView, NSLayoutManagerDelegate {
     @objc func insertLink(_ sender: Any?) {
         let ns = string as NSString
         let selection = selectedRange()
-        let text = selection.length > 0 ? ns.substring(with: selection) : "testo"
+        let text = selection.length > 0 ? ns.substring(with: selection) : localized("text")
         insertText("[\(text)](https://)", replacementRange: selection)
         let caret = selection.location + text.utf16.count + 3
         setSelectedRange(NSRange(location: caret, length: 8))

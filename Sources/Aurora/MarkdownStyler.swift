@@ -1,4 +1,5 @@
 import AppKit
+import AuroraCore
 
 /// Applica lo stile visivo al testo. La sintassi Markdown resta nel documento
 /// ma viene nascosta sulle righe che non contengono il cursore, come in Typora.

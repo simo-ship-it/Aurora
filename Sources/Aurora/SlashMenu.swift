@@ -1,4 +1,5 @@
 import AppKit
+import AuroraCore
 
 /// Una voce del menu che si apre digitando "/".
 ///
@@ -14,8 +15,11 @@ struct SlashCommand {
     let action: Selector
     let tag: Int
 
+    /// Il titolo arriva in inglese e viene tradotto qui: `matches` confronta
+    /// così la scritta che l'utente ha davvero davanti, e la ricerca funziona
+    /// nella lingua in cui il menu è mostrato.
     init(_ title: String, _ hint: String, _ symbol: String, _ action: Selector, tag: Int = 0) {
-        self.title = title
+        self.title = localized(title)
         self.hint = hint
         self.symbol = symbol
         self.action = action
@@ -32,34 +36,34 @@ struct SlashCommand {
     private static let heading = #selector(MarkdownTextView.setHeadingLevel(_:))
 
     static let all: [SlashCommand] = [
-        SlashCommand("Titolo 1", "#", "textformat.size.larger", heading, tag: 1),
-        SlashCommand("Titolo 2", "##", "textformat.size", heading, tag: 2),
-        SlashCommand("Titolo 3", "###", "textformat.size.smaller", heading, tag: 3),
-        SlashCommand("Titolo 4", "####", "textformat.size.smaller", heading, tag: 4),
-        SlashCommand("Titolo 5", "#####", "textformat.size.smaller", heading, tag: 5),
-        SlashCommand("Titolo 6", "######", "textformat.size.smaller", heading, tag: 6),
-        SlashCommand("Paragrafo", "testo normale", "text.alignleft", heading, tag: 0),
-        SlashCommand("Elenco puntato", "-", "list.bullet",
+        SlashCommand("Heading 1", "#", "textformat.size.larger", heading, tag: 1),
+        SlashCommand("Heading 2", "##", "textformat.size", heading, tag: 2),
+        SlashCommand("Heading 3", "###", "textformat.size.smaller", heading, tag: 3),
+        SlashCommand("Heading 4", "####", "textformat.size.smaller", heading, tag: 4),
+        SlashCommand("Heading 5", "#####", "textformat.size.smaller", heading, tag: 5),
+        SlashCommand("Heading 6", "######", "textformat.size.smaller", heading, tag: 6),
+        SlashCommand("Paragraph", localized("plain text"), "text.alignleft", heading, tag: 0),
+        SlashCommand("Bulleted List", "-", "list.bullet",
                      #selector(MarkdownTextView.toggleBulletList(_:))),
-        SlashCommand("Elenco di attività", "- [ ]", "checklist",
+        SlashCommand("Task List", "- [ ]", "checklist",
                      #selector(MarkdownTextView.toggleTaskList(_:))),
-        SlashCommand("Citazione", ">", "text.quote",
+        SlashCommand("Blockquote", ">", "text.quote",
                      #selector(MarkdownTextView.toggleBlockquote(_:))),
-        SlashCommand("Blocco di codice", "```", "curlybraces",
+        SlashCommand("Code Block", "```", "curlybraces",
                      #selector(MarkdownTextView.insertCodeBlock(_:))),
-        SlashCommand("Linea orizzontale", "---", "minus",
+        SlashCommand("Horizontal Rule", "---", "minus",
                      #selector(MarkdownTextView.insertHorizontalRule(_:))),
-        SlashCommand("Collegamento", "[testo](url)", "link",
+        SlashCommand("Link", localized("[text](url)"), "link",
                      #selector(MarkdownTextView.insertLink(_:))),
-        SlashCommand("Grassetto", "**", "bold",
+        SlashCommand("Bold", "**", "bold",
                      #selector(MarkdownTextView.toggleBold(_:))),
-        SlashCommand("Corsivo", "*", "italic",
+        SlashCommand("Italic", "*", "italic",
                      #selector(MarkdownTextView.toggleItalic(_:))),
-        SlashCommand("Barrato", "~~", "strikethrough",
+        SlashCommand("Strikethrough", "~~", "strikethrough",
                      #selector(MarkdownTextView.toggleStrikethrough(_:))),
-        SlashCommand("Evidenziato", "==", "highlighter",
+        SlashCommand("Highlight", "==", "highlighter",
                      #selector(MarkdownTextView.toggleHighlight(_:))),
-        SlashCommand("Codice inline", "`", "chevron.left.forwardslash.chevron.right",
+        SlashCommand("Inline Code", "`", "chevron.left.forwardslash.chevron.right",
                      #selector(MarkdownTextView.toggleInlineCode(_:)))
     ]
 }

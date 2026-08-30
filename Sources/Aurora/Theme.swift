@@ -31,7 +31,26 @@ struct Theme {
 
     // MARK: - Font
 
-    var body: NSFont { NSFont.systemFont(ofSize: bodySize, weight: .regular) }
+    /// La famiglia del testo di lettura. `nil` è il font di sistema, che non è
+    /// una famiglia fra le altre: segue la dimensione ottica e le impostazioni
+    /// di accessibilità, e per questo resta la scelta predefinita.
+    var fontFamily: String?
+
+    /// Il font del testo alla misura e al peso richiesti. Una famiglia scelta
+    /// dall'utente può non avere il peso chiesto: in quel caso il descrittore
+    /// non si risolve e si torna al font di sistema, che ce l'ha sempre.
+    func font(size: CGFloat, weight: NSFont.Weight) -> NSFont {
+        guard let fontFamily else { return NSFont.systemFont(ofSize: size, weight: weight) }
+        let descriptor = NSFontDescriptor(fontAttributes: [
+            .family: fontFamily,
+            .traits: [NSFontDescriptor.TraitKey.weight: weight.rawValue]
+        ])
+        return NSFont(descriptor: descriptor, size: size) ?? NSFont.systemFont(ofSize: size, weight: weight)
+    }
+
+    var body: NSFont { font(size: bodySize, weight: .regular) }
+    /// Il codice resta monospaziato di sistema anche con un'altra famiglia
+    /// scelta: l'allineamento in colonna è il suo motivo di esistere.
     var mono: NSFont { NSFont.monospacedSystemFont(ofSize: monoSize, weight: .regular) }
 
     func heading(_ level: Int) -> NSFont {
@@ -39,7 +58,7 @@ struct Theme {
         let l = max(1, min(6, level))
         let size = (bodySize * scale[l - 1]).rounded()
         let weight: NSFont.Weight = l <= 2 ? .bold : .semibold
-        return NSFont.systemFont(ofSize: size, weight: weight)
+        return font(size: size, weight: weight)
     }
 
     /// Crenatura dei titoli: ai corpi grandi le lettere vanno strette,

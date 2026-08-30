@@ -1,7 +1,12 @@
 import AppKit
+import AuroraCore
 
 /// Contiene l'area di scrittura: colonna centrata a larghezza fissa, come in Typora.
 final class EditorViewController: NSViewController, NSTextViewDelegate {
+
+    /// La misura con cui si apre una finestra nuova. Sta qui e non nella
+    /// finestra perché è una scelta sul testo: quanto ne sta sotto gli occhi.
+    static let preferredSize = NSSize(width: 900, height: 760)
 
     private(set) var textView: MarkdownTextView!
     private var scrollView: NSScrollView!
@@ -42,10 +47,25 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
         NotificationCenter.default.addObserver(
             self, selector: #selector(visibleAreaChanged),
             name: NSView.boundsDidChangeNotification, object: scrollView.contentView)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(themeChanged),
+            name: .auroraThemeChanged, object: nil)
     }
 
     @objc private func visibleAreaChanged() {
         textView.styler.restyleVisible()
+    }
+
+    /// Le impostazioni sono cambiate: font, misure e colori vanno riapplicati a
+    /// tutto il documento, non solo alla parte visibile, perché l'altezza delle
+    /// righe fuori campo decide dove ci si trova scorrendo.
+    @objc private func themeChanged() {
+        scrollView.backgroundColor = theme.background
+        view.window?.backgroundColor = theme.background
+        textView.applyTheme()
+        updateContentInsets()
+        textView.styler.invalidateCache()
+        textView.styler.restyleAll()
     }
 
     deinit {
