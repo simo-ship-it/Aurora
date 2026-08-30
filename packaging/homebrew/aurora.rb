@@ -9,7 +9,7 @@ class Aurora < Formula
   desc "Markdown editor that renders as you type"
   homepage "https://github.com/simo-ship-it/Aurora"
   url "https://github.com/simo-ship-it/Aurora/archive/refs/tags/v0.1.0.tar.gz"
-  sha256 "95caeab844acedf7edfc436bb8c9e4c84a458bf6ca3c92c3f31b0fd97a1d074f"
+  sha256 "8a3943e70d904ecbf6965acc1798448857051658f09d4df746a46ff6655bf9cd"
   license "MIT"
   head "https://github.com/simo-ship-it/Aurora.git", branch: "main"
 
