@@ -12,9 +12,13 @@ Il file su disco resta Markdown puro: nessun formato proprietario, nessuna conve
 
 *[Read me in English](README.md)*
 
-<!-- TODO: aggiungere qui una schermata o una GIF breve — per un editor che si
-     gioca tutto su come appare il testo mentre scrivi, la tabella delle
-     funzionalità non basta. -->
+<p align="center">
+  <img src="docs/screenshot-it.png" width="820"
+       alt="Aurora con un documento Markdown: ogni marcatore è nascosto tranne che sulla riga dove sta il cursore, dove i due asterischi attorno a una frase in grassetto si vedono in grigio.">
+</p>
+
+<p align="center"><em>Il cursore è sulla terza riga — e solo lì compaiono i
+<code>**</code> attorno alla frase in grassetto.</em></p>
 
 ## Installare
 

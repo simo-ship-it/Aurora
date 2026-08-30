@@ -12,8 +12,13 @@ The file on disk stays plain Markdown: no proprietary format, no conversion.
 
 *[Leggimi in italiano](README.it.md)*
 
-<!-- TODO: add a screenshot or a short GIF here — for an editor that sells
-     itself on how text looks while you type, the feature table is not enough. -->
+<p align="center">
+  <img src="docs/screenshot.png" width="820"
+       alt="Aurora showing a Markdown document: every marker is hidden except on the line holding the cursor, where the two asterisks around a bold phrase are visible in grey.">
+</p>
+
+<p align="center"><em>The cursor sits on the third line — and only there do the
+<code>**</code> around the bold phrase appear.</em></p>
 
 ## Install
 
