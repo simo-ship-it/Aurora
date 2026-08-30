@@ -5,10 +5,15 @@ final class MarkdownTextView: NSTextView, NSLayoutManagerDelegate {
     var styler: MarkdownStyler!
     private var theme: Theme { Theme.current }
 
+    private let slashMenu = SlashMenuController()
+    /// Posizione della "/" che ha aperto il menu, o `NSNotFound`.
+    private var slashOrigin = NSNotFound
+
     // MARK: - Configurazione
 
     func configure() {
         styler = MarkdownStyler(textView: self)
+        slashMenu.onPick = { [weak self] command in self?.applySlash(command) }
         textStorage?.delegate = styler
         layoutManager?.delegate = self
 
@@ -39,6 +44,101 @@ final class MarkdownTextView: NSTextView, NSLayoutManagerDelegate {
     }
 
     override var acceptsFirstResponder: Bool { true }
+
+    // MARK: - Menu dei comandi ("/")
+
+    override func insertText(_ string: Any, replacementRange: NSRange) {
+        super.insertText(string, replacementRange: replacementRange)
+        guard (string as? String) == "/" || (string as? NSAttributedString)?.string == "/" else { return }
+
+        let slash = selectedRange().location - 1
+        guard slash >= 0, slashAllowed(at: slash) else { return }
+        slashOrigin = slash
+        if !slashMenu.present(query: "", below: caretRect(at: slash), in: window) {
+            dismissSlashMenu()
+        }
+    }
+
+    /// Il menu si apre solo a inizio riga o dopo uno spazio, e mai dentro un
+    /// blocco di codice: così una barra dentro `http://` o in `e/o` resta una barra.
+    private func slashAllowed(at location: Int) -> Bool {
+        if let line = currentLine(at: location), line.kind == .codeBody || line.kind == .fence {
+            return false
+        }
+        guard location > 0 else { return true }
+        let character = (self.string as NSString).character(at: location - 1)
+        return character == 32 || character == 9 || character == 10 || character == 13
+    }
+
+    private func caretRect(at location: Int) -> NSRect {
+        let length = (self.string as NSString).length
+        return firstRect(forCharacterRange: NSRange(location: min(location, length), length: 0),
+                         actualRange: nil)
+    }
+
+    private func dismissSlashMenu() {
+        slashOrigin = NSNotFound
+        slashMenu.dismiss()
+    }
+
+    /// Riallinea il menu a ciò che è stato scritto dopo la "/".
+    private func refreshSlashMenu() {
+        guard slashOrigin != NSNotFound else { return }
+        let ns = self.string as NSString
+        let caret = selectedRange().location
+        guard slashOrigin < ns.length, ns.character(at: slashOrigin) == 47,
+              caret > slashOrigin, caret <= ns.length else {
+            dismissSlashMenu()
+            return
+        }
+        let query = ns.substring(with: NSRange(location: slashOrigin + 1, length: caret - slashOrigin - 1))
+        // Uno spazio chiude il menu: vuol dire che stavi scrivendo, non cercando.
+        guard !query.contains(where: { $0 == " " || $0 == "\n" || $0 == "\t" }) else {
+            dismissSlashMenu()
+            return
+        }
+        if !slashMenu.present(query: query, below: caretRect(at: slashOrigin), in: window) {
+            dismissSlashMenu()
+        }
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if slashMenu.isVisible {
+            switch event.keyCode {
+            case 125: slashMenu.moveSelection(by: 1); return
+            case 126: slashMenu.moveSelection(by: -1); return
+            case 36, 76: slashMenu.confirmSelection(); return
+            case 53: dismissSlashMenu(); return
+            default: break
+            }
+        }
+        super.keyDown(with: event)
+    }
+
+    override func resignFirstResponder() -> Bool {
+        dismissSlashMenu()
+        return super.resignFirstResponder()
+    }
+
+    /// Toglie "/comando" dal testo e lancia il comando vero.
+    private func applySlash(_ command: SlashCommand) {
+        let caret = selectedRange().location
+        let start = slashOrigin
+        dismissSlashMenu()
+        guard start != NSNotFound, caret >= start, caret <= (self.string as NSString).length else { return }
+
+        let typed = NSRange(location: start, length: caret - start)
+        if typed.length > 0, shouldChangeText(in: typed, replacementString: "") {
+            textStorage?.replaceCharacters(in: typed, with: "")
+            didChangeText()
+        }
+        setSelectedRange(NSRange(location: start, length: 0))
+
+        // I comandi leggono il livello dal tag del mittente, come dal menu Formato.
+        let sender = NSMenuItem()
+        sender.tag = command.tag
+        NSApp.sendAction(command.action, to: self, from: sender)
+    }
 
     // MARK: - Occultamento della sintassi
 
@@ -505,6 +605,7 @@ final class MarkdownTextView: NSTextView, NSLayoutManagerDelegate {
     override func didChangeText() {
         super.didChangeText()
         styler.handleTextChange()
+        refreshSlashMenu()
     }
 
     private func currentLine(at location: Int) -> LineInfo? {

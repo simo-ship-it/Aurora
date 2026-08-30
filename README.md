@@ -51,6 +51,7 @@ file dal Finder e il menu documenti funzionano solo eseguendo il bundle `.app`.
 - **⌘1 … ⌘6** impostano il livello del titolo, **⌘0** torna a paragrafo.
 - **⇧⌘U** elenco puntato, **⇧⌘T** elenco di attività, **⌥⌘K** blocco di codice,
   **⌘K** collegamento.
+- **/** apre il menu dei comandi (vedi sotto).
 - **⌘F** cerca nel documento, con la barra di ricerca di sistema.
 - Un clic su una casella `[ ]` la spunta; **⌘-clic** su un collegamento lo apre.
 
@@ -60,6 +61,23 @@ non statunitensi — l'italiano fra questi — stanno altrove, quindi non rispon
 
 Annulla/ripristina, salvataggio automatico, versioni, documenti recenti e schede
 delle finestre sono quelli standard di macOS.
+
+## Menu dei comandi
+
+Digitando **/** a inizio riga, o dopo uno spazio, si apre un elenco di tutti i comandi
+di formattazione: titoli, elenchi, citazione, blocco di codice, linea orizzontale,
+collegamento, grassetto, corsivo, barrato, evidenziato, codice inline. Continuando a
+scrivere si filtra, **↑ ↓** scorrono, **Invio** o un clic applicano, **Esc** chiude.
+Il testo digitato dopo la barra sparisce insieme al menu.
+
+Si filtra sul nome ma anche sulla sintassi: `/###` trova Titolo 3 e `/---` la linea
+orizzontale, per chi il Markdown lo conosce già.
+
+Dentro una parola la barra resta una barra — `http://esempio.it` e `e/o` non aprono
+niente — e dentro un blocco di codice il menu non compare affatto.
+
+Ogni voce richiama il comando che esiste già nel menu Formato: il menu dei comandi è
+un modo per raggiungerli scrivendo, non una seconda implementazione.
 
 ## Cartella di lavoro
 
@@ -88,6 +106,7 @@ Sources/Aurora/
   MarkdownTextView.swift   NSTextView: glifi nascosti, decorazioni, comandi di editing
   MarkdownParser.swift     analisi di blocchi e elementi inline (solo indici, nessuna copia)
   MarkdownStyler.swift     dal risultato dell'analisi agli attributi del testo
+  SlashMenu.swift          il menu dei comandi che si apre con "/"
   Workspace.swift          cartella di lavoro e stato dell'albero, su UserDefaults
   WorkspaceBrowser.swift   pulsante in barra del titolo e albero dei file
   Theme.swift              font, colori chiari/scuri, metriche
