@@ -181,18 +181,24 @@ final class MarkdownTextView: NSTextView, NSLayoutManagerDelegate {
         guard let layout = layoutManager, let container = textContainer, let storage = textStorage,
               storage.length > 0 else { return }
 
+        // Il layout va garantito PRIMA di chiedere quali glifi cadono nel rettangolo:
+        // altrimenti la domanda stessa parte da una geometria non aggiornata, e le
+        // decorazioni finiscono su coordinate vecchie — sparse a caso mentre si
+        // ridimensiona, o spostate di qualche punto subito dopo una modifica.
+        layout.ensureLayout(forBoundingRect: rect, in: container)
+
         let visibleGlyphs = layout.glyphRange(forBoundingRect: rect, in: container)
         let visible = layout.characterRange(forGlyphRange: visibleGlyphs, actualGlyphRange: nil)
         guard visible.length > 0 else { return }
-        // Le decorazioni leggono la geometria del testo: se il layout non è ancora
-        // stato calcolato — succede mentre si ridimensiona la finestra — finirebbero
-        // su coordinate vecchie, sparse a caso nella pagina.
-        layout.ensureLayout(forCharacterRange: visible)
 
         let origin = textContainerOrigin
         let contentWidth = container.size.width
 
         func rects(for range: NSRange) -> NSRect {
+            // Il ristilizzo invalida i glifi dell'intervallo modificato: senza questa
+            // garanzia la mappatura carattere→glifo può rispondere con dati vecchi e
+            // la decorazione finisce sulla riga sbagliata.
+            layout.ensureLayout(forCharacterRange: range)
             let glyphs = layout.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
             var box = layout.boundingRect(forGlyphRange: glyphs, in: container)
             box.origin.x += origin.x
@@ -215,8 +221,22 @@ final class MarkdownTextView: NSTextView, NSLayoutManagerDelegate {
                              xRadius: theme.surfaceRadius,
                              yRadius: theme.surfaceRadius).fill()
             case "hr":
+                // Il tratto appartiene a una riga sola, quindi la sua quota va presa
+                // dal frammento di quella riga e non dal rettangolo dell'intervallo:
+                // se l'attributo sconfina per un istante sulla riga sotto — la riga
+                // nuova lo eredita dal punto d'inserimento — il rettangolo ne
+                // abbraccia due e il centro scende di mezza riga.
+                // I trattini hanno glifo nullo perché nascosti, e cercare il
+                // frammento a partire da un glifo nullo può restituire quello della
+                // riga precedente: il tratto finirebbe una riga più su. L'a-capo
+                // finale invece un glifo vero ce l'ha, ed è sulla riga giusta.
+                layout.ensureLayout(forCharacterRange: range)
+                let anchor = max(range.location, NSMaxRange(range) - 1)
+                let glyph = layout.glyphIndexForCharacter(at: anchor)
+                var fragment = layout.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+                fragment.origin.y += origin.y
                 theme.rule.setFill()
-                NSRect(x: origin.x + 2, y: (box.midY - 0.5).rounded(),
+                NSRect(x: origin.x + 2, y: (fragment.midY - 0.5).rounded(),
                        width: contentWidth - 4, height: 1).fill()
             default:
                 break
@@ -240,6 +260,7 @@ final class MarkdownTextView: NSTextView, NSLayoutManagerDelegate {
             guard let glyph = value as? String else { return }
             let box = rects(for: range)
             let font = (storage.attribute(.font, at: range.location, effectiveRange: nil) as? NSFont) ?? theme.body
+            layout.ensureLayout(forCharacterRange: range)
             let glyphIndex = layout.glyphIndexForCharacter(at: range.location)
             let fragment = layout.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil)
             let position = layout.location(forGlyphAt: glyphIndex)

@@ -70,6 +70,9 @@ final class MarkdownStyler: NSObject, NSTextStorageDelegate {
         let to = structureChanged ? max(last, visibleLineRange()?.upperBound ?? last) + 20
                                   : last + 2
         restyle(lineRange: from...min(all.count - 1, max(from, to)))
+        // La riga appena creata eredita gli attributi del punto d'inserimento:
+        // se fra questi c'è una decorazione di blocco, si estende dove non deve.
+        sanitizeTypingAttributes()
         scheduleSafetyRestyle()
     }
 
