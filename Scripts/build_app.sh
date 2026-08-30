@@ -43,11 +43,14 @@ python3 "$ROOT/Scripts/make_strings.py" >/dev/null
 # `set -u` considera non definito un array vuoto espanso.
 ARCHS=""
 if [[ "${AURORA_UNIVERSAL:-}" == "1" ]]; then
-    # SwiftPM delega a xcbuild per le build a più architetture, e xcbuild
-    # arriva con Xcode. Meglio dirlo subito che lasciare l'errore grezzo.
-    if [[ ! -x /Library/Developer/SharedFrameworks/XCBuild.framework/Versions/A/Support/xcbuild ]]; then
-        echo "AURORA_UNIVERSAL=1 richiede Xcode completo (qui ci sono solo i Command Line Tools)." >&2
-        echo "Il workflow di rilascio lo fa su un runner che ce l'ha; in locale togli la variabile." >&2
+    # SwiftPM delega a xcbuild per le build a più architetture, e xcbuild arriva
+    # con Xcode. Si chiede a xcodebuild se risponde invece di cercare xcbuild in
+    # un percorso: con Xcode installato sta dentro Xcode.app, e dov'è di preciso
+    # dipende da dove Xcode è stato messo.
+    if ! xcodebuild -version >/dev/null 2>&1; then
+        echo "AURORA_UNIVERSAL=1 richiede Xcode completo, e qui è attivo $(xcode-select -p)." >&2
+        echo "Con i soli Command Line Tools togli la variabile: la build esce per" >&2
+        echo "l'architettura di questa macchina. L'universale lo fa il workflow di rilascio." >&2
         exit 1
     fi
     ARCHS="--arch arm64 --arch x86_64"
