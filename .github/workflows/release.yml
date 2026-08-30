@@ -58,8 +58,18 @@ jobs:
           AURORA_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
         run: ./Scripts/build_app.sh release
 
+      # `lipo -archs` stampa le architetture ma esce con successo anche quando
+      # ne trova una sola: da solo non verificava niente.
       - name: Verifica che il binario sia universale
-        run: lipo -archs Aurora.app/Contents/MacOS/Aurora
+        run: |
+          ARCHS="$(lipo -archs Aurora.app/Contents/MacOS/Aurora)"
+          echo "Architetture: $ARCHS"
+          for wanted in arm64 x86_64; do
+            case " $ARCHS " in
+              *" $wanted "*) ;;
+              *) echo "::error::manca l'architettura $wanted"; exit 1 ;;
+            esac
+          done
 
       # La notarizzazione va fatta su un archivio, non sulla cartella .app, e la
       # ricevuta va poi "graffettata" al bundle: così Gatekeeper la trova anche
