@@ -9,8 +9,6 @@ final class Workspace {
 
     static let shared = Workspace()
 
-    static let didChangeNotification = Notification.Name("AuroraWorkspaceDidChange")
-
     private static let defaultsKey = "AuroraWorkspaceFolder"
 
     /// Estensioni elencate. Le altre restano invisibili: l'elenco serve a
@@ -21,7 +19,6 @@ final class Workspace {
         didSet {
             guard folder != oldValue else { return }
             UserDefaults.standard.set(folder?.path, forKey: Self.defaultsKey)
-            NotificationCenter.default.post(name: Self.didChangeNotification, object: nil)
         }
     }
 

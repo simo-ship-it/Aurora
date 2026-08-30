@@ -29,41 +29,39 @@ struct SlashCommand {
             || hint.range(of: query, options: options) != nil
     }
 
-    static let all: [SlashCommand] = {
-        let heading = #selector(MarkdownTextView.setHeadingLevel(_:))
-        let commands: [SlashCommand] = [
-            SlashCommand("Titolo 1", "#", "textformat.size.larger", heading, tag: 1),
-            SlashCommand("Titolo 2", "##", "textformat.size", heading, tag: 2),
-            SlashCommand("Titolo 3", "###", "textformat.size.smaller", heading, tag: 3),
-            SlashCommand("Titolo 4", "####", "textformat.size.smaller", heading, tag: 4),
-            SlashCommand("Titolo 5", "#####", "textformat.size.smaller", heading, tag: 5),
-            SlashCommand("Titolo 6", "######", "textformat.size.smaller", heading, tag: 6),
-            SlashCommand("Paragrafo", "testo normale", "text.alignleft", heading, tag: 0),
-            SlashCommand("Elenco puntato", "-", "list.bullet",
-                         #selector(MarkdownTextView.toggleBulletList(_:))),
-            SlashCommand("Elenco di attività", "- [ ]", "checklist",
-                         #selector(MarkdownTextView.toggleTaskList(_:))),
-            SlashCommand("Citazione", ">", "text.quote",
-                         #selector(MarkdownTextView.toggleBlockquote(_:))),
-            SlashCommand("Blocco di codice", "```", "curlybraces",
-                         #selector(MarkdownTextView.insertCodeBlock(_:))),
-            SlashCommand("Linea orizzontale", "---", "minus",
-                         #selector(MarkdownTextView.insertHorizontalRule(_:))),
-            SlashCommand("Collegamento", "[testo](url)", "link",
-                         #selector(MarkdownTextView.insertLink(_:))),
-            SlashCommand("Grassetto", "**", "bold",
-                         #selector(MarkdownTextView.toggleBold(_:))),
-            SlashCommand("Corsivo", "*", "italic",
-                         #selector(MarkdownTextView.toggleItalic(_:))),
-            SlashCommand("Barrato", "~~", "strikethrough",
-                         #selector(MarkdownTextView.toggleStrikethrough(_:))),
-            SlashCommand("Evidenziato", "==", "highlighter",
-                         #selector(MarkdownTextView.toggleHighlight(_:))),
-            SlashCommand("Codice inline", "`", "chevron.left.forwardslash.chevron.right",
-                         #selector(MarkdownTextView.toggleInlineCode(_:)))
-        ]
-        return commands
-    }()
+    private static let heading = #selector(MarkdownTextView.setHeadingLevel(_:))
+
+    static let all: [SlashCommand] = [
+        SlashCommand("Titolo 1", "#", "textformat.size.larger", heading, tag: 1),
+        SlashCommand("Titolo 2", "##", "textformat.size", heading, tag: 2),
+        SlashCommand("Titolo 3", "###", "textformat.size.smaller", heading, tag: 3),
+        SlashCommand("Titolo 4", "####", "textformat.size.smaller", heading, tag: 4),
+        SlashCommand("Titolo 5", "#####", "textformat.size.smaller", heading, tag: 5),
+        SlashCommand("Titolo 6", "######", "textformat.size.smaller", heading, tag: 6),
+        SlashCommand("Paragrafo", "testo normale", "text.alignleft", heading, tag: 0),
+        SlashCommand("Elenco puntato", "-", "list.bullet",
+                     #selector(MarkdownTextView.toggleBulletList(_:))),
+        SlashCommand("Elenco di attività", "- [ ]", "checklist",
+                     #selector(MarkdownTextView.toggleTaskList(_:))),
+        SlashCommand("Citazione", ">", "text.quote",
+                     #selector(MarkdownTextView.toggleBlockquote(_:))),
+        SlashCommand("Blocco di codice", "```", "curlybraces",
+                     #selector(MarkdownTextView.insertCodeBlock(_:))),
+        SlashCommand("Linea orizzontale", "---", "minus",
+                     #selector(MarkdownTextView.insertHorizontalRule(_:))),
+        SlashCommand("Collegamento", "[testo](url)", "link",
+                     #selector(MarkdownTextView.insertLink(_:))),
+        SlashCommand("Grassetto", "**", "bold",
+                     #selector(MarkdownTextView.toggleBold(_:))),
+        SlashCommand("Corsivo", "*", "italic",
+                     #selector(MarkdownTextView.toggleItalic(_:))),
+        SlashCommand("Barrato", "~~", "strikethrough",
+                     #selector(MarkdownTextView.toggleStrikethrough(_:))),
+        SlashCommand("Evidenziato", "==", "highlighter",
+                     #selector(MarkdownTextView.toggleHighlight(_:))),
+        SlashCommand("Codice inline", "`", "chevron.left.forwardslash.chevron.right",
+                     #selector(MarkdownTextView.toggleInlineCode(_:)))
+    ]
 }
 
 /// Pannello che non diventa mai chiave: mentre è aperto continui a scrivere nel

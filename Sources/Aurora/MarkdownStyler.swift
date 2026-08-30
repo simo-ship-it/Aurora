@@ -102,11 +102,14 @@ final class MarkdownStyler: NSObject, NSTextStorageDelegate {
     }
 
     /// Ristilizza le righe a schermo (più un margine), usata durante lo scorrimento.
-    func restyleVisible(margin: Int = 20) {
+    func restyleVisible() {
         guard let visible = visibleLineRange() else { return }
         let all = lines
+        // Un margine oltre il bordo dello schermo, così scorrendo di poco non
+        // si trovano righe non ancora stilizzate.
+        let margine = 20
         activeLines = computeActiveLines(all)
-        restyle(lineRange: max(0, visible.lowerBound - margin)...min(all.count - 1, visible.upperBound + margin))
+        restyle(lineRange: max(0, visible.lowerBound - margine)...min(all.count - 1, visible.upperBound + margine))
     }
 
     /// Chiamato quando il cursore si sposta: cambia l'insieme delle righe "in modifica".
