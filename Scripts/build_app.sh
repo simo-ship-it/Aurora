@@ -10,6 +10,11 @@
 #                          macchina ma Gatekeeper la blocca se scaricata.
 #   AURORA_VERSION         versione da scrivere nel bundle (default: quella
 #                          già in Resources/Info.plist).
+#   AURORA_NO_SWIFTPM_SANDBOX=1
+#                          rinuncia al sandbox interno di SwiftPM. Serve solo a
+#                          chi compila già dentro un sandbox proprio — Homebrew:
+#                          annidarne due non è permesso, e la valutazione del
+#                          manifesto fallisce. Il sandbox esterno resta.
 #   AURORA_UNIVERSAL=1     compila per Apple silicon e Intel insieme. Serve per
 #                          i rilasci: una macchina sola non basta più a definire
 #                          "il Mac". Richiede Xcode completo, non solo i Command
@@ -56,8 +61,13 @@ if [[ "${AURORA_UNIVERSAL:-}" == "1" ]]; then
     ARCHS="--arch arm64 --arch x86_64"
 fi
 
-swift build -c "$CONFIG" $ARCHS
-BIN="$(swift build -c "$CONFIG" $ARCHS --show-bin-path)/Aurora"
+SANDBOX=""
+if [[ "${AURORA_NO_SWIFTPM_SANDBOX:-}" == "1" ]]; then
+    SANDBOX="--disable-sandbox"
+fi
+
+swift build -c "$CONFIG" $ARCHS $SANDBOX
+BIN="$(swift build -c "$CONFIG" $ARCHS $SANDBOX --show-bin-path)/Aurora"
 
 # --- Bundle ----------------------------------------------------------------
 rm -rf "$APP"

@@ -9,13 +9,17 @@ class Aurora < Formula
   desc "Markdown editor that renders as you type"
   homepage "https://github.com/simo-ship-it/Aurora"
   url "https://github.com/simo-ship-it/Aurora/archive/refs/tags/v0.1.0.tar.gz"
-  sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+  sha256 "95caeab844acedf7edfc436bb8c9e4c84a458bf6ca3c92c3f31b0fd97a1d074f"
   license "MIT"
   head "https://github.com/simo-ship-it/Aurora.git", branch: "main"
 
   depends_on macos: :ventura
 
   def install
+    # Homebrew compila già dentro un sandbox, e SwiftPM ne aprirebbe un secondo
+    # per valutare Package.swift: annidarli non è permesso, e la compilazione si
+    # ferma su "sandbox_apply: Operation not permitted".
+    ENV["AURORA_NO_SWIFTPM_SANDBOX"] = "1"
     system "./Scripts/build_app.sh", "release"
     prefix.install "Aurora.app"
     # Perché `aurora documento.md` funzioni dal terminale.
