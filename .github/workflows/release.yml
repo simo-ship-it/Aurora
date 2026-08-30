@@ -17,7 +17,7 @@ jobs:
       SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
       NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Leggi la versione dal tag
         id: version
