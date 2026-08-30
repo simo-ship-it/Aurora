@@ -1,0 +1,119 @@
+name: Release
+
+# Si attiva sui tag di versione: `git tag v0.1.0 && git push --tags`.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-14
+    env:
+      # Un segreto non si può leggere dentro `if:`, ma si può copiare in una
+      # variabile d'ambiente e interrogare quella.
+      SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+      NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Leggi la versione dal tag
+        id: version
+        run: echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Prove del parser
+        run: swift run -c release AuroraCheck
+
+      - name: Verifica le traduzioni
+        run: python3 Scripts/check_strings.py
+
+      # La firma vera richiede un certificato Developer ID nel portachiavi del
+      # runner. Senza i segreti configurati si salta: il rilascio esce comunque,
+      # firmato ad-hoc, e le note lo dicono a chiare lettere.
+      - name: Installa il certificato Developer ID
+        if: env.SIGN_IDENTITY != ''
+        env:
+          CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/build.keychain"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          echo "$CERTIFICATE_P12" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$KEYCHAIN" \
+            -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          security list-keychain -d user -s "$KEYCHAIN" login.keychain-db
+          rm "$RUNNER_TEMP/certificate.p12"
+
+      - name: Compila Aurora.app (Apple silicon e Intel)
+        env:
+          AURORA_VERSION: ${{ steps.version.outputs.value }}
+          AURORA_UNIVERSAL: "1"
+          AURORA_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+        run: ./Scripts/build_app.sh release
+
+      - name: Verifica che il binario sia universale
+        run: lipo -archs Aurora.app/Contents/MacOS/Aurora
+
+      # La notarizzazione va fatta su un archivio, non sulla cartella .app, e la
+      # ricevuta va poi "graffettata" al bundle: così Gatekeeper la trova anche
+      # su una macchina che in quel momento è senza rete.
+      - name: Notarizza
+        if: env.NOTARY_APPLE_ID != ''
+        env:
+          NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
+          NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
+        run: |
+          ditto -c -k --keepParent Aurora.app notarize.zip
+          xcrun notarytool submit notarize.zip \
+            --apple-id "$NOTARY_APPLE_ID" \
+            --team-id "$NOTARY_TEAM_ID" \
+            --password "$NOTARY_PASSWORD" \
+            --wait
+          xcrun stapler staple Aurora.app
+          rm notarize.zip
+
+      - name: Impacchetta
+        id: package
+        run: |
+          NAME="Aurora-${{ steps.version.outputs.value }}.zip"
+          ditto -c -k --keepParent Aurora.app "$NAME"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "sha256=$(shasum -a 256 "$NAME" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: Note di rilascio
+        run: |
+          {
+            echo "## Installazione"
+            echo
+            echo '```bash'
+            echo "brew install --cask simo-ship-it/aurora/aurora"
+            echo '```'
+            echo
+            echo "Oppure scarica \`${{ steps.package.outputs.name }}\`, scompattalo e trascina Aurora in Applicazioni."
+            echo
+            if [ -z "$SIGN_IDENTITY" ]; then
+              echo "> **Questa build non è firmata con un Developer ID.** macOS la bloccherà"
+              echo "> al primo avvio. Per aprirla comunque:"
+              echo "> \`xattr -dr com.apple.quarantine /Applications/Aurora.app\`"
+              echo
+            fi
+            echo "SHA-256: \`${{ steps.package.outputs.sha256 }}\`"
+            echo
+            echo "Richiede macOS 13 o successivo. Universale: Apple silicon e Intel."
+          } > note.md
+
+      - name: Pubblica il rilascio
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "Aurora ${{ steps.version.outputs.value }}" \
+            --notes-file note.md \
+            "${{ steps.package.outputs.name }}"

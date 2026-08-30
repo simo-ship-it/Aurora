@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Versione di Swift
+        run: swift --version
+
+      - name: Compila
+        run: swift build -c release
+
+      - name: Prove del parser
+        run: swift run -c release AuroraCheck
+
+      # Prima di rigenerarle: così una traduzione aggiunta al codice ma non
+      # ricommessa fa fallire la verifica invece di essere ricreata in silenzio.
+      - name: Verifica le traduzioni
+        run: python3 Scripts/check_strings.py
+
+      - name: Assembla Aurora.app
+        run: ./Scripts/build_app.sh release
+
+      - name: Il bundle è integro
+        run: |
+          codesign --verify --verbose=2 Aurora.app
+          test -f Aurora.app/Contents/Resources/AppIcon.icns
+          test -d Aurora.app/Contents/Resources/it.lproj
