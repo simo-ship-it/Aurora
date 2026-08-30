@@ -124,6 +124,14 @@ e quelle che compaiono scorrendo. L'unico caso in cui serve andare oltre è l'ap
 o la chiusura di un blocco di codice, che cambia l'aspetto di tutto ciò che segue: lo
 styler se ne accorge confrontando lo stato dei blocchi prima e dopo la modifica.
 
+Le decorazioni disegnate — il riquadro del codice, la barra delle citazioni, la
+linea orizzontale, i segni di elenco — non chiedono mai al layout dove stia il glifo
+di un carattere. Non si può: i caratteri nascosti hanno glifo nullo, e il layout li
+attribuisce al frammento della riga *precedente*, per cui ogni decorazione finirebbe
+una riga più su. Si enumerano invece i frammenti di riga inquadrati e si tengono
+quelli che **cominciano** dentro l'intervallo decorato: il frammento della riga giusta
+comincia sempre lì dentro, al più contenendo solo il proprio a-capo.
+
 C'è poi una regola che tiene fermo il testo mentre lo scrivi: **la geometria verticale
 di una riga non dipende dal cursore, e nessun tipo di riga aggiunge spazio sopra o
 sotto di sé**. La separazione la danno le righe vuote — che in Markdown sono anche il

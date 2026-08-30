@@ -176,15 +176,43 @@ final class MarkdownTextView: NSTextView, NSLayoutManagerDelegate {
 
     // MARK: - Decorazioni (blocchi di codice, citazioni, linee, elenchi)
 
+    /// Un frammento di riga con l'intervallo di caratteri che copre, già nelle
+    /// coordinate della vista.
+    private struct LineBox {
+        let characters: NSRange
+        let rect: NSRect
+    }
+
+    /// Le righe inquadrate, con i caratteri di ciascuna.
+    ///
+    /// È il perno di tutto il disegno delle decorazioni. La strada opposta —
+    /// chiedere al layout manager dove sta il glifo di un dato carattere — qui non
+    /// si può percorrere: Aurora nasconde la sintassi assegnando il *glifo nullo*,
+    /// e per un carattere nascosto quella domanda può rispondere con un glifo della
+    /// riga precedente, mandando la decorazione una riga più su. Enumerare i
+    /// frammenti e chiedere a ciascuno quali caratteri copre funziona invece
+    /// sempre, perché un glifo nullo appartiene comunque al frammento della sua riga.
+    private func lineBoxes(_ layout: NSLayoutManager, glyphs: NSRange, origin: NSPoint) -> [LineBox] {
+        var boxes: [LineBox] = []
+        layout.enumerateLineFragments(forGlyphRange: glyphs) { rect, _, _, glyphRange, _ in
+            var box = rect
+            box.origin.x += origin.x
+            box.origin.y += origin.y
+            boxes.append(LineBox(characters: layout.characterRange(forGlyphRange: glyphRange,
+                                                                   actualGlyphRange: nil),
+                                 rect: box))
+        }
+        return boxes
+    }
+
     override func drawBackground(in rect: NSRect) {
         super.drawBackground(in: rect)
         guard let layout = layoutManager, let container = textContainer, let storage = textStorage,
               storage.length > 0 else { return }
 
         // Il layout va garantito PRIMA di chiedere quali glifi cadono nel rettangolo:
-        // altrimenti la domanda stessa parte da una geometria non aggiornata, e le
-        // decorazioni finiscono su coordinate vecchie — sparse a caso mentre si
-        // ridimensiona, o spostate di qualche punto subito dopo una modifica.
+        // altrimenti la domanda stessa parte da una geometria non aggiornata e le
+        // decorazioni finiscono su coordinate vecchie.
         layout.ensureLayout(forBoundingRect: rect, in: container)
 
         let visibleGlyphs = layout.glyphRange(forBoundingRect: rect, in: container)
@@ -193,50 +221,45 @@ final class MarkdownTextView: NSTextView, NSLayoutManagerDelegate {
 
         let origin = textContainerOrigin
         let contentWidth = container.size.width
+        let boxes = lineBoxes(layout, glyphs: visibleGlyphs, origin: origin)
 
-        func rects(for range: NSRange) -> NSRect {
-            // Il ristilizzo invalida i glifi dell'intervallo modificato: senza questa
-            // garanzia la mappatura carattere→glifo può rispondere con dati vecchi e
-            // la decorazione finisce sulla riga sbagliata.
-            layout.ensureLayout(forCharacterRange: range)
-            let glyphs = layout.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
-            var box = layout.boundingRect(forGlyphRange: glyphs, in: container)
-            box.origin.x += origin.x
-            box.origin.y += origin.y
-            return box
+        /// Le righe di una decorazione: quelle che *cominciano* dentro il suo
+        /// intervallo di caratteri.
+        ///
+        /// Non si può chiedere quale riga *contiene* il primo carattere: i caratteri
+        /// nascosti hanno glifo nullo e il layout li attribuisce al frammento della
+        /// riga precedente. Cercare a partire da loro atterra sempre una riga più su
+        /// — la linea orizzontale disegnata sopra i trattini, il riquadro del codice
+        /// che parte una riga prima. Il frammento della riga giusta, invece,
+        /// comincia sempre dentro l'intervallo: al più contiene solo l'a-capo.
+        func rows(in range: NSRange) -> [NSRect] {
+            boxes.filter { NSLocationInRange($0.characters.location, range) }.map(\.rect)
+        }
+
+        /// L'area coperta da una decorazione, o `nil` se non è inquadrata.
+        func box(for range: NSRange) -> NSRect? {
+            rows(in: range).reduce(nil) { (union: NSRect?, row) in union.map { $0.union(row) } ?? row }
         }
 
         // Superfici dei blocchi: codice e tabelle condividono lo stesso grigio stondato.
         storage.enumerateAttribute(.auroraBlock, in: visible) { value, range, _ in
             guard let kind = value as? String else { return }
-            var box = rects(for: range)
             switch kind {
             case "code", "table":
-                box.origin.x = origin.x
-                box.size.width = contentWidth
+                guard var surface = box(for: range) else { return }
+                surface.origin.x = origin.x
+                surface.size.width = contentWidth
                 // Il codice ha già aria dalle righe ``` nascoste; la tabella no.
-                box = box.insetBy(dx: 0, dy: kind == "code" ? -2 : -10)
+                surface = surface.insetBy(dx: 0, dy: kind == "code" ? -2 : -10)
                 theme.codeBackground.setFill()
-                NSBezierPath(roundedRect: box,
+                NSBezierPath(roundedRect: surface,
                              xRadius: theme.surfaceRadius,
                              yRadius: theme.surfaceRadius).fill()
             case "hr":
-                // Il tratto appartiene a una riga sola, quindi la sua quota va presa
-                // dal frammento di quella riga e non dal rettangolo dell'intervallo:
-                // se l'attributo sconfina per un istante sulla riga sotto — la riga
-                // nuova lo eredita dal punto d'inserimento — il rettangolo ne
-                // abbraccia due e il centro scende di mezza riga.
-                // I trattini hanno glifo nullo perché nascosti, e cercare il
-                // frammento a partire da un glifo nullo può restituire quello della
-                // riga precedente: il tratto finirebbe una riga più su. L'a-capo
-                // finale invece un glifo vero ce l'ha, ed è sulla riga giusta.
-                layout.ensureLayout(forCharacterRange: range)
-                let anchor = max(range.location, NSMaxRange(range) - 1)
-                let glyph = layout.glyphIndexForCharacter(at: anchor)
-                var fragment = layout.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
-                fragment.origin.y += origin.y
+                // Il tratto appartiene a una riga sola: la prima dell'intervallo.
+                guard let row = rows(in: range).first else { return }
                 theme.rule.setFill()
-                NSRect(x: origin.x + 2, y: (fragment.midY - 0.5).rounded(),
+                NSRect(x: origin.x + 2, y: (row.midY - 0.5).rounded(),
                        width: contentWidth - 4, height: 1).fill()
             default:
                 break
@@ -245,37 +268,37 @@ final class MarkdownTextView: NSTextView, NSLayoutManagerDelegate {
 
         // Barre laterali delle citazioni, a pillola.
         storage.enumerateAttribute(.auroraQuoteDepth, in: visible) { value, range, _ in
-            guard let depth = value as? Int, depth > 0 else { return }
-            let box = rects(for: range)
+            guard let depth = value as? Int, depth > 0, let area = box(for: range) else { return }
             theme.quoteBar.setFill()
             for level in 0..<depth {
                 let bar = NSRect(x: origin.x + CGFloat(level) * theme.quoteIndent + 1,
-                                 y: box.minY + 1, width: 3, height: max(0, box.height - 2))
+                                 y: area.minY + 1, width: 3, height: max(0, area.height - 2))
                 NSBezierPath(roundedRect: bar, xRadius: 1.5, yRadius: 1.5).fill()
             }
         }
 
         // Segni di elenco e caselle: forme disegnate, non glifi di testo.
         storage.enumerateAttribute(.auroraGlyph, in: visible) { value, range, _ in
-            guard let glyph = value as? String else { return }
-            let box = rects(for: range)
+            guard let glyph = value as? String, let row = rows(in: range).first
+                    ?? boxes.first(where: { NSLocationInRange(range.location, $0.characters) })?.rect
+            else { return }
             let font = (storage.attribute(.font, at: range.location, effectiveRange: nil) as? NSFont) ?? theme.body
-            layout.ensureLayout(forCharacterRange: range)
-            let glyphIndex = layout.glyphIndexForCharacter(at: range.location)
-            let fragment = layout.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil)
-            let position = layout.location(forGlyphAt: glyphIndex)
-            // Il testo è alzato nella riga dallo scostamento di base: il segno lo segue.
-            let raised = (storage.attribute(.baselineOffset, at: range.location,
-                                            effectiveRange: nil) as? CGFloat) ?? 0
-            let baseline = fragment.origin.y + position.y + origin.y - raised
-            // Centrato sull'altezza della x minuscola: è lì che l'occhio cerca il segno.
-            let middle = baseline - font.xHeight / 2
+
+            // Il testo è centrato nella riga dall'altezza fissa: il centro ottico
+            // della x minuscola si ricava dal frammento e dal font, senza passare
+            // dai glifi. È lì che l'occhio cerca il segno.
+            let textTop = row.midY - (font.ascender - font.descender) / 2
+            let middle = textTop + font.ascender - font.xHeight / 2
+            // Il marcatore non è nascosto — è solo trasparente — quindi la sua
+            // posizione orizzontale si può chiedere ai glifi senza rischi.
+            let glyphs = layout.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+            let left = layout.boundingRect(forGlyphRange: glyphs, in: container).minX + origin.x
 
             switch glyph {
             case "☐", "☑":
-                self.drawCheckbox(at: NSPoint(x: box.minX + 7, y: middle), checked: glyph == "☑")
+                self.drawCheckbox(at: NSPoint(x: left + 7, y: middle), checked: glyph == "☑")
             default:
-                self.drawBullet(at: NSPoint(x: box.minX + 3, y: middle), glyph: glyph)
+                self.drawBullet(at: NSPoint(x: left + 3, y: middle), glyph: glyph)
             }
         }
     }
