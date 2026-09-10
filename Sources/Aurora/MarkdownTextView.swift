@@ -7,6 +7,14 @@ final class MarkdownTextView: NSTextView, NSLayoutManagerDelegate {
     private var theme: Theme { Theme.current }
 
     private let slashMenu = SlashMenuController()
+    private var tableEditor: TableEditorWindowController?
+    private var inlineTables: [InlineTableView] = []
+    private var inlineTableRefreshScheduled = false
+    private var activeInlineTableRange: NSRange?
+    private var lastAllowedTextSelection = NSRange(location: 0, length: 0)
+    private var normalizingTableSelection = false
+    /// `true` per ↑, `false` per ↓; serve a scegliere il lato corretto del blocco.
+    private var pendingVerticalNavigation: Bool?
     /// Posizione della "/" che ha aperto il menu, o `NSNotFound`.
     private var slashOrigin = NSNotFound
 
@@ -48,6 +56,8 @@ final class MarkdownTextView: NSTextView, NSLayoutManagerDelegate {
         backgroundColor = theme.background
         insertionPointColor = theme.insertionPoint
         typingAttributes = [.font: theme.body, .foregroundColor: theme.text]
+        inlineTables.forEach { $0.applyTheme() }
+        scheduleInlineTableRefresh()
     }
 
     override var acceptsFirstResponder: Bool { true }
@@ -119,7 +129,14 @@ final class MarkdownTextView: NSTextView, NSLayoutManagerDelegate {
             default: break
             }
         }
+
+        switch event.keyCode {
+        case 126: pendingVerticalNavigation = true
+        case 125: pendingVerticalNavigation = false
+        default: pendingVerticalNavigation = nil
+        }
         super.keyDown(with: event)
+        pendingVerticalNavigation = nil
     }
 
     override func resignFirstResponder() -> Bool {
@@ -248,16 +265,15 @@ final class MarkdownTextView: NSTextView, NSLayoutManagerDelegate {
             rows(in: range).reduce(nil) { (union: NSRect?, row) in union.map { $0.union(row) } ?? row }
         }
 
-        // Superfici dei blocchi: codice e tabelle condividono lo stesso grigio stondato.
+        // Superfici dei blocchi di codice.
         storage.enumerateAttribute(.auroraBlock, in: visible) { value, range, _ in
             guard let kind = value as? String else { return }
             switch kind {
-            case "code", "table":
+            case "code":
                 guard var surface = box(for: range) else { return }
                 surface.origin.x = origin.x
                 surface.size.width = contentWidth
-                // Il codice ha già aria dalle righe ``` nascoste; la tabella no.
-                surface = surface.insetBy(dx: 0, dy: kind == "code" ? -2 : -10)
+                surface = surface.insetBy(dx: 0, dy: -2)
                 theme.codeBackground.setFill()
                 NSBezierPath(roundedRect: surface,
                              xRadius: theme.surfaceRadius,
@@ -271,15 +287,6 @@ final class MarkdownTextView: NSTextView, NSLayoutManagerDelegate {
             default:
                 break
             }
-        }
-
-        // Filetto sotto l'intestazione della tabella, al posto della riga di trattini.
-        storage.enumerateAttribute(.auroraTableRule, in: visible) { value, range, _ in
-            guard value != nil, let row = rows(in: range).first else { return }
-            theme.rule.setFill()
-            NSRect(x: origin.x + theme.surfacePadding,
-                   y: (row.midY - 0.5).rounded(),
-                   width: contentWidth - theme.surfacePadding * 2, height: 1).fill()
         }
 
         // Barre laterali delle citazioni, a pillola.
@@ -411,6 +418,7 @@ final class MarkdownTextView: NSTextView, NSLayoutManagerDelegate {
     // MARK: - Rientri
 
     override func insertTab(_ sender: Any?) {
+        if moveTableSelection(forward: true) { return }
         let selection = selectedRange()
         if selection.length > 0 || currentLine(at: selection.location)?.kind == .bulletItem
             || currentLine(at: selection.location)?.kind == .orderedItem {
@@ -420,12 +428,10 @@ final class MarkdownTextView: NSTextView, NSLayoutManagerDelegate {
         }
     }
 
-    /// ⇧Tab rientra come Tab, per scelta.
-    ///
-    /// Senza questo override il comportamento sarebbe un caso: l'evento arriva
-    /// come `insertTab:` e quindi rientra, ma se un giorno arrivasse davvero come
-    /// backtab il rientro si ridurrebbe di colpo. Meglio dirlo esplicitamente.
+    /// ⇧Tab torna alla cella precedente quando il cursore è in una tabella;
+    /// altrove conserva il rientro previsto per l'editor.
     override func insertBacktab(_ sender: Any?) {
+        if moveTableSelection(forward: false) { return }
         insertTab(sender)
     }
 
@@ -584,6 +590,326 @@ final class MarkdownTextView: NSTextView, NSLayoutManagerDelegate {
         setSelectedRange(NSRange(location: selection.location + 4, length: 0))
     }
 
+    @objc func insertTable(_ sender: Any?) {
+        presentTableEditor(TableEditorWindowController.newTable()) { [weak self] table in
+            self?.insert(table: table)
+        }
+    }
+
+    @objc func editTable(_ sender: Any?) {
+        let existing: (table: MarkdownTable, range: NSRange)?
+        if let active = activeInlineTableRange,
+           let view = inlineTables.first(where: { NSEqualRanges($0.sourceRange, active) }) {
+            existing = (view.editedTable, active)
+        } else {
+            existing = markdownTable(at: selectedRange().location)
+        }
+        guard let existing else { return }
+        presentTableEditor(existing.table) { [weak self] table in
+            self?.replace(table: table, in: existing.range)
+        }
+    }
+
+    private func insert(table: MarkdownTable) {
+        let ns = string as NSString
+        let selection = selectedRange()
+        // Una tabella è un blocco: se è l'unico contenuto servono comunque due
+        // righe reali, prima e dopo, sulle quali il cursore possa posizionarsi.
+        let before = selection.location == 0 ? "\n"
+            : (ns.character(at: selection.location - 1) != 10 ? "\n" : "")
+        let afterLocation = NSMaxRange(selection)
+        let after = afterLocation == ns.length ? "\n"
+            : (ns.character(at: afterLocation) != 10 ? "\n" : "")
+        let markdown = before + table.markdown + after
+        guard shouldChangeText(in: selection, replacementString: markdown) else { return }
+        textStorage?.replaceCharacters(in: selection, with: markdown)
+        didChangeText()
+        let tableEnd = selection.location + before.utf16.count + table.markdown.utf16.count
+        setSelectedRange(NSRange(location: tableEnd + after.utf16.count, length: 0))
+    }
+
+    private func replace(table: MarkdownTable, in range: NSRange) {
+        guard shouldChangeText(in: range, replacementString: table.markdown) else { return }
+        textStorage?.replaceCharacters(in: range, with: table.markdown)
+        didChangeText()
+        setSelectedRange(NSRange(location: range.location + 2, length: 0))
+    }
+
+    private func presentTableEditor(_ table: MarkdownTable,
+                                    onApply: @escaping (MarkdownTable) -> Void) {
+        guard let window else { return }
+        let controller = TableEditorWindowController(table: table, onApply: onApply)
+        tableEditor = controller
+        controller.beginSheet(for: window) { [weak self, weak controller] in
+            guard let self, let controller, self.tableEditor === controller else { return }
+            self.tableEditor = nil
+        }
+    }
+
+    private func markdownTable(at location: Int) -> (table: MarkdownTable, range: NSRange)? {
+        let all = styler.lines
+        guard let current = all.firstIndex(where: { location >= $0.range.location && location < NSMaxRange($0.range) }),
+              isTableLine(all[current].kind) else { return nil }
+
+        var first = current
+        while first > 0, isTableLine(all[first - 1].kind) { first -= 1 }
+        var last = current
+        while last < all.count - 1, isTableLine(all[last + 1].kind) { last += 1 }
+
+        let ns = string as NSString
+        guard let header = all[first...last].first(where: { $0.kind == .tableHeader }) else { return nil }
+        let headers = TableLayout.cells(of: header, in: ns).map(\.text)
+        guard !headers.isEmpty else { return nil }
+        let delimiter = all[first...last].first(where: { $0.kind == .tableDelimiter })
+            .map { TableLayout.cells(of: $0, in: ns).map(\.text) } ?? []
+        let rows = all[first...last]
+            .filter { $0.kind == .tableRow }
+            .map { TableLayout.cells(of: $0, in: ns).map(\.text) }
+        let range = NSRange(location: all[first].range.location,
+                            length: all[last].contentsEnd - all[first].range.location)
+        return (MarkdownTable(headers: headers, delimiter: delimiter, rows: rows), range)
+    }
+
+    private func isTableLine(_ kind: LineKind) -> Bool {
+        kind == .tableHeader || kind == .tableDelimiter || kind == .tableRow
+    }
+
+    private struct InlineTablePresentation {
+        let range: NSRange
+        let table: MarkdownTable
+        let frame: NSRect
+    }
+
+    private func scheduleInlineTableRefresh() {
+        guard !inlineTableRefreshScheduled else { return }
+        inlineTableRefreshScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            self?.inlineTableRefreshScheduled = false
+            self?.refreshInlineTables()
+        }
+    }
+
+    private func refreshInlineTables() {
+        guard styler != nil, !inlineTables.contains(where: \.isEditing) else { return }
+        let presentations = inlineTablePresentations()
+
+        if let active = activeInlineTableRange {
+            activeInlineTableRange = presentations.first(where: {
+                $0.range.location == active.location
+            })?.range
+        }
+
+        let canReuse = presentations.count == inlineTables.count
+            && zip(presentations, inlineTables).allSatisfy {
+                NSEqualRanges($0.range, $1.sourceRange) && $0.table == $1.table
+            }
+        if canReuse {
+            for (presentation, view) in zip(presentations, inlineTables) {
+                view.frame = presentation.frame
+            }
+            return
+        }
+
+        inlineTables.forEach { $0.removeFromSuperview() }
+        inlineTables = presentations.map { presentation in
+            let tableView = InlineTableView(frame: presentation.frame,
+                                            sourceRange: presentation.range,
+                                            table: presentation.table,
+                                            onActivate: { [weak self] range in
+                self?.activeInlineTableRange = range
+            }, onMoveOutside: { [weak self] range, before in
+                self?.moveCaret(outsideTable: range, before: before)
+            }) { [weak self] table, range in
+                self?.replace(table: table, in: range)
+            }
+            addSubview(tableView)
+            return tableView
+        }
+    }
+
+    private func inlineTablePresentations() -> [InlineTablePresentation] {
+        guard let layout = layoutManager, let container = textContainer else { return [] }
+        layout.ensureLayout(for: container)
+
+        let all = styler.lines
+        let ns = string as NSString
+        let origin = textContainerOrigin
+        let boxes = lineBoxes(layout,
+                              glyphs: layout.glyphRange(for: container),
+                              origin: origin)
+        var result: [InlineTablePresentation] = []
+        var index = 0
+
+        while index < all.count {
+            guard all[index].kind == .tableHeader else { index += 1; continue }
+            let first = index
+            var last = first
+            while last < all.count - 1, isTableLine(all[last + 1].kind) { last += 1 }
+
+            let headers = TableLayout.cells(of: all[first], in: ns).map(\.text)
+            let delimiter = all[first...last].first(where: { $0.kind == .tableDelimiter })
+                .map { TableLayout.cells(of: $0, in: ns).map(\.text) } ?? []
+            let rows = all[first...last]
+                .filter { $0.kind == .tableRow }
+                .map { TableLayout.cells(of: $0, in: ns).map(\.text) }
+
+            if !headers.isEmpty {
+                let range = NSRange(location: all[first].range.location,
+                                    length: all[last].contentsEnd - all[first].range.location)
+                // Le righe della tabella hanno glifi nulli. Cercarne la posizione
+                // a partire dal primo carattere può quindi restituire il frammento
+                // precedente; usiamo la stessa enumerazione robusta delle altre
+                // decorazioni del documento.
+                if let line = boxes.first(where: {
+                    NSLocationInRange($0.characters.location, all[first].range)
+                })?.rect {
+                    let table = MarkdownTable(headers: headers, delimiter: delimiter, rows: rows)
+                    let width = max(240, container.size.width)
+                    let gutter = InlineTableView.controlGutter
+                    let height = CGFloat(1 + table.rows.count) * InlineTableView.rowHeight
+                    let frame = NSRect(x: origin.x - gutter,
+                                       y: line.minY,
+                                       width: width + gutter * 2, height: height)
+                    result.append(InlineTablePresentation(range: range, table: table, frame: frame))
+                }
+            }
+            index = last + 1
+        }
+        return result
+    }
+
+    private func moveCaret(outsideTable range: NSRange, before: Bool) {
+        guard let window else { return }
+        _ = window.makeFirstResponder(self)
+        activeInlineTableRange = nil
+
+        let ns = string as NSString
+        if before {
+            if range.location == 0 {
+                guard shouldChangeText(in: NSRange(location: 0, length: 0),
+                                       replacementString: "\n") else { return }
+                textStorage?.replaceCharacters(in: NSRange(location: 0, length: 0), with: "\n")
+                didChangeText()
+                setSelectedRange(NSRange(location: 0, length: 0))
+            } else {
+                setSelectedRange(NSRange(location: range.location - 1, length: 0))
+            }
+        } else {
+            let end = min(NSMaxRange(range), ns.length)
+            if end == ns.length {
+                guard shouldChangeText(in: NSRange(location: end, length: 0),
+                                       replacementString: "\n") else { return }
+                textStorage?.replaceCharacters(in: NSRange(location: end, length: 0), with: "\n")
+                didChangeText()
+                setSelectedRange(NSRange(location: end + 1, length: 0))
+            } else if ns.character(at: end) == 10 || ns.character(at: end) == 13 {
+                setSelectedRange(NSRange(location: end + 1, length: 0))
+            } else {
+                guard shouldChangeText(in: NSRange(location: end, length: 0),
+                                       replacementString: "\n") else { return }
+                textStorage?.replaceCharacters(in: NSRange(location: end, length: 0), with: "\n")
+                didChangeText()
+                setSelectedRange(NSRange(location: end + 1, length: 0))
+            }
+        }
+        scrollRangeToVisible(selectedRange())
+    }
+
+    /// Il Markdown che conserva la tabella non è una superficie di editing.
+    /// Se il cursore del documento vi entra con frecce o mouse, lo spostiamo
+    /// sull'altro lato del blocco; le celle restano accessibili direttamente
+    /// attraverso i loro `NSTextField`.
+    func normalizeSelectionOutsideTables() {
+        guard !normalizingTableSelection, window?.firstResponder === self else { return }
+        let selection = selectedRange()
+        guard selection.length == 0 else {
+            lastAllowedTextSelection = selection
+            return
+        }
+
+        // Le viste vengono riallineate al ciclo di layout successivo; durante
+        // la digitazione il parser, invece, contiene già gli intervalli nuovi.
+        // Usarlo qui evita che la posizione della tabella rimasta indietro di
+        // un carattere catturi la seconda lettera scritta nella riga sopra.
+        guard let range = currentTableRange(containing: selection.location) else {
+            lastAllowedTextSelection = selection
+            return
+        }
+
+        let before: Bool
+        if let vertical = pendingVerticalNavigation {
+            before = vertical
+        } else if lastAllowedTextSelection.location < range.location {
+            // Arrivando da sopra, l'intera tabella si comporta come una riga.
+            before = false
+        } else if lastAllowedTextSelection.location > NSMaxRange(range) {
+            before = true
+        } else {
+            let middle = range.location + range.length / 2
+            before = selection.location <= middle
+        }
+
+        normalizingTableSelection = true
+        moveCaret(outsideTable: range, before: before)
+        lastAllowedTextSelection = selectedRange()
+        normalizingTableSelection = false
+    }
+
+    private func currentTableRange(containing location: Int) -> NSRange? {
+        let all = styler.lines
+        var index = 0
+        while index < all.count {
+            guard all[index].kind == .tableHeader else {
+                index += 1
+                continue
+            }
+
+            let first = index
+            var last = first
+            while last < all.count - 1, isTableLine(all[last + 1].kind) {
+                last += 1
+            }
+            let range = NSRange(location: all[first].range.location,
+                                length: all[last].contentsEnd - all[first].range.location)
+            if location >= range.location && location <= NSMaxRange(range) {
+                return range
+            }
+            index = last + 1
+        }
+        return nil
+    }
+
+    /// La tabella è un insieme di celle editabili direttamente nel testo. Le
+    /// barre e il delimitatore sono nascosti dallo styler; Tab attraversa quindi
+    /// i soli contenuti, come in un editor di documenti.
+    private func moveTableSelection(forward: Bool) -> Bool {
+        let selection = selectedRange()
+        guard let cells = tableCellRanges(at: selection.location), !cells.isEmpty else { return false }
+        let current = cells.firstIndex {
+            selection.location >= $0.location && selection.location <= NSMaxRange($0)
+        } ?? 0
+        let target = forward ? current + 1 : current - 1
+        guard cells.indices.contains(target) else { return false }
+        setSelectedRange(cells[target])
+        return true
+    }
+
+    private func tableCellRanges(at location: Int) -> [NSRange]? {
+        let all = styler.lines
+        guard let current = all.firstIndex(where: { location >= $0.range.location && location < NSMaxRange($0.range) }),
+              isTableLine(all[current].kind) else { return nil }
+
+        var first = current
+        while first > 0, isTableLine(all[first - 1].kind) { first -= 1 }
+        var last = current
+        while last < all.count - 1, isTableLine(all[last + 1].kind) { last += 1 }
+
+        let ns = string as NSString
+        return all[first...last]
+            .filter { $0.kind == .tableHeader || $0.kind == .tableRow }
+            .flatMap { TableLayout.cells(of: $0, in: ns).map(\.range) }
+    }
+
     private func selectedLineTexts() -> [String] {
         let ns = string as NSString
         let lineRange = ns.lineRange(for: selectedRange())
@@ -624,6 +950,7 @@ final class MarkdownTextView: NSTextView, NSLayoutManagerDelegate {
     // MARK: - Interazione
 
     override func mouseDown(with event: NSEvent) {
+        activeInlineTableRange = nil
         let point = convert(event.locationInWindow, from: nil)
         if let index = characterIndex(at: point), let storage = textStorage, index < storage.length {
             // ⌘-clic su un collegamento: lo apre nel browser.
@@ -638,6 +965,14 @@ final class MarkdownTextView: NSTextView, NSLayoutManagerDelegate {
             if storage.attribute(.auroraCheckbox, at: index, effectiveRange: &checkboxRange) != nil,
                checkboxRange.length == 3 {
                 toggleCheckbox(at: checkboxRange)
+                return
+            }
+            // Un doppio clic conserva il clic singolo per l'editing testuale,
+            // ma apre una griglia per cambiare celle, righe e colonne.
+            if event.clickCount == 2, let existing = markdownTable(at: index) {
+                presentTableEditor(existing.table) { [weak self] table in
+                    self?.replace(table: table, in: existing.range)
+                }
                 return
             }
         }
@@ -673,6 +1008,27 @@ final class MarkdownTextView: NSTextView, NSLayoutManagerDelegate {
         super.didChangeText()
         styler.handleTextChange()
         refreshSlashMenu()
+        scheduleInlineTableRefresh()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        scheduleInlineTableRefresh()
+    }
+
+    override func layout() {
+        super.layout()
+        scheduleInlineTableRefresh()
+    }
+
+    override func drawInsertionPoint(in rect: NSRect, color: NSColor, turnedOn flag: Bool) {
+        let location = selectedRange().location
+        if inlineTables.contains(where: {
+            location >= $0.sourceRange.location && location <= NSMaxRange($0.sourceRange)
+        }) {
+            return
+        }
+        super.drawInsertionPoint(in: rect, color: color, turnedOn: flag)
     }
 
     private func currentLine(at location: Int) -> LineInfo? {
@@ -690,8 +1046,12 @@ final class MarkdownTextView: NSTextView, NSLayoutManagerDelegate {
         case #selector(toggleBold(_:)), #selector(toggleItalic(_:)), #selector(toggleStrikethrough(_:)),
              #selector(toggleInlineCode(_:)), #selector(toggleHighlight(_:)), #selector(setHeadingLevel(_:)),
              #selector(toggleBlockquote(_:)), #selector(toggleBulletList(_:)), #selector(toggleTaskList(_:)),
-             #selector(insertHorizontalRule(_:)), #selector(insertLink(_:)), #selector(insertCodeBlock(_:)):
+             #selector(insertHorizontalRule(_:)), #selector(insertLink(_:)), #selector(insertCodeBlock(_:)),
+             #selector(insertTable(_:)):
             return isEditable
+        case #selector(editTable(_:)):
+            return isEditable && (activeInlineTableRange != nil
+                || markdownTable(at: selectedRange().location) != nil)
         default:
             return super.validateMenuItem(menuItem)
         }

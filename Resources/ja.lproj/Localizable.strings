@@ -43,6 +43,17 @@
 "Task List" = "タスクリスト";
 "Blockquote" = "引用";
 "Code Block" = "コードブロック";
+"Table" = "表";
+"Table…" = "表…";
+"Edit Table…" = "表を編集…";
+"Rows:" = "行:";
+"Columns:" = "列:";
+"Add Row" = "行を追加";
+"Add Column" = "列を追加";
+"Cancel" = "キャンセル";
+"Apply" = "適用";
+"Column %d" = "列%d";
+"Row %d, column %d" = "%d行%d列";
 "Link" = "リンク";
 "Link…" = "リンク…";
 "Horizontal Rule" = "水平線";

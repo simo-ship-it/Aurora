@@ -7,4 +7,5 @@ import Foundation
 runBlockTests()
 runInlineTests()
 runEditingTests()
+runTableTests()
 exit(Check.report())

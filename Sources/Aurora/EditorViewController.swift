@@ -70,7 +70,19 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
 
     override func viewDidLayout() {
         super.viewDidLayout()
+        synchronizeDocumentWidth()
         updateContentInsets()
+    }
+
+    /// `NSScrollView` non forza sempre il `documentView` a seguire la propria
+    /// larghezza durante lo zoom della finestra. Il contenitore di testo e le
+    /// viste in linea (incluse le tabelle) dipendono invece proprio da questa
+    /// misura, quindi la teniamo esplicitamente sincronizzata.
+    private func synchronizeDocumentWidth() {
+        let size = scrollView.contentSize
+        guard size.width > 0, abs(textView.frame.width - size.width) > 0.5 else { return }
+        textView.setFrameSize(NSSize(width: size.width,
+                                     height: max(textView.frame.height, size.height)))
     }
 
     private func updateContentInsets() {
@@ -108,6 +120,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
     }
 
     func textViewDidChangeSelection(_ notification: Notification) {
+        textView.normalizeSelectionOutsideTables()
         textView.styler.selectionChanged()
     }
 }

@@ -43,6 +43,17 @@
 "Task List" = "任务列表";
 "Blockquote" = "引用";
 "Code Block" = "代码块";
+"Table" = "表格";
+"Table…" = "表格…";
+"Edit Table…" = "编辑表格…";
+"Rows:" = "行：";
+"Columns:" = "列：";
+"Add Row" = "添加行";
+"Add Column" = "添加列";
+"Cancel" = "取消";
+"Apply" = "適用";
+"Column %d" = "第 %d 列";
+"Row %d, column %d" = "第 %d 行，第 %d 列";
 "Link" = "链接";
 "Link…" = "链接…";
 "Horizontal Rule" = "水平线";

@@ -43,6 +43,17 @@
 "Task List" = "Elenco di attività";
 "Blockquote" = "Citazione";
 "Code Block" = "Blocco di codice";
+"Table" = "Tabella";
+"Table…" = "Tabella…";
+"Edit Table…" = "Modifica tabella…";
+"Rows:" = "Righe:";
+"Columns:" = "Colonne:";
+"Add Row" = "Aggiungi riga";
+"Add Column" = "Aggiungi colonna";
+"Cancel" = "Annulla";
+"Apply" = "Applica";
+"Column %d" = "Colonna %d";
+"Row %d, column %d" = "Riga %d, colonna %d";
 "Link" = "Collegamento";
 "Link…" = "Collegamento…";
 "Horizontal Rule" = "Linea orizzontale";

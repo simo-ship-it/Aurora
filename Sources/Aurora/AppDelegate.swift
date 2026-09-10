@@ -150,6 +150,8 @@ enum MainMenu {
             add(menu, localized("Task List"), #selector(MarkdownTextView.toggleTaskList(_:)), "t", [.command, .shift])
             add(menu, localized("Blockquote"), #selector(MarkdownTextView.toggleBlockquote(_:)), "'", [.command, .shift])
             add(menu, localized("Code Block"), #selector(MarkdownTextView.insertCodeBlock(_:)), "k", [.command, .option])
+            add(menu, localized("Table…"), #selector(MarkdownTextView.insertTable(_:)), "t", [.command, .option])
+            add(menu, localized("Edit Table…"), #selector(MarkdownTextView.editTable(_:)))
             menu.addItem(.separator())
             add(menu, localized("Link…"), #selector(MarkdownTextView.insertLink(_:)), "k")
             add(menu, localized("Horizontal Rule"), #selector(MarkdownTextView.insertHorizontalRule(_:)), "-", [.command, .shift])

@@ -43,6 +43,17 @@
 "Task List" = "Aufgabenliste";
 "Blockquote" = "Zitat";
 "Code Block" = "Codeblock";
+"Table" = "Tabelle";
+"Table…" = "Tabelle…";
+"Edit Table…" = "Tabelle bearbeiten…";
+"Rows:" = "Zeilen:";
+"Columns:" = "Spalten:";
+"Add Row" = "Zeile hinzufügen";
+"Add Column" = "Spalte hinzufügen";
+"Cancel" = "Abbrechen";
+"Apply" = "Anwenden";
+"Column %d" = "Spalte %d";
+"Row %d, column %d" = "Zeile %d, Spalte %d";
 "Link" = "Link";
 "Link…" = "Link…";
 "Horizontal Rule" = "Horizontale Linie";

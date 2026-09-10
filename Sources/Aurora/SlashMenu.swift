@@ -51,6 +51,8 @@ struct SlashCommand {
                      #selector(MarkdownTextView.toggleBlockquote(_:))),
         SlashCommand("Code Block", "```", "curlybraces",
                      #selector(MarkdownTextView.insertCodeBlock(_:))),
+        SlashCommand("Table", "| --- |", "tablecells",
+                     #selector(MarkdownTextView.insertTable(_:))),
         SlashCommand("Horizontal Rule", "---", "minus",
                      #selector(MarkdownTextView.insertHorizontalRule(_:))),
         SlashCommand("Link", localized("[text](url)"), "link",
