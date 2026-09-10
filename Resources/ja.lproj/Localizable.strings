@@ -50,6 +50,12 @@
 "Columns:" = "列:";
 "Add Row" = "行を追加";
 "Add Column" = "列を追加";
+"Remove Row" = "行を削除";
+"Remove Column" = "列を削除";
+"Remove Row %d" = "%d行を削除";
+"Remove Column %d" = "列%dを削除";
+"Add Row Below %d" = "%d行の下に追加";
+"Add Column After %d" = "列%dの後に追加";
 "Cancel" = "キャンセル";
 "Apply" = "適用";
 "Column %d" = "列%d";

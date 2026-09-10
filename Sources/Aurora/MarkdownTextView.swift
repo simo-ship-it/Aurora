@@ -765,11 +765,13 @@ final class MarkdownTextView: NSTextView, NSLayoutManagerDelegate {
                 })?.rect {
                     let table = MarkdownTable(headers: headers, delimiter: delimiter, rows: rows)
                     let width = max(240, container.size.width)
-                    let gutter = InlineTableView.controlGutter
+                    let rowGutter = InlineTableView.rowControlGutter
+                    let columnGutter = InlineTableView.columnControlGutter
                     let height = CGFloat(1 + table.rows.count) * InlineTableView.rowHeight
-                    let frame = NSRect(x: origin.x - gutter,
-                                       y: line.minY,
-                                       width: width + gutter * 2, height: height)
+                    let frame = NSRect(x: origin.x,
+                                       y: line.minY - columnGutter,
+                                       width: width + rowGutter,
+                                       height: height + columnGutter)
                     result.append(InlineTablePresentation(range: range, table: table, frame: frame))
                 }
             }

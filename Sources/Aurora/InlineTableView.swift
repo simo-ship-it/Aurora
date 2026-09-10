@@ -15,14 +15,20 @@ final class InlineTableView: NSView, NSTextFieldDelegate {
     private var fields: [[NSTextField]] = []
     private let addRowButton = NSButton()
     private let addColumnButton = NSButton()
-    private var rowHoverTrackingArea: NSTrackingArea?
-    private var columnHoverTrackingArea: NSTrackingArea?
+    private let removeRowButton = NSButton()
+    private let removeColumnButton = NSButton()
+    private var rowControlTrackingAreas: [NSTrackingArea] = []
+    private var columnControlTrackingAreas: [NSTrackingArea] = []
+    private var activeRow: Int?
+    private var activeColumn: Int?
 
     static let rowHeight: CGFloat = 44
-    static let controlGutter: CGFloat = 28
+    static let rowControlGutter: CGFloat = 60
+    static let columnControlGutter: CGFloat = 34
     private static let horizontalInset: CGFloat = 14
     private static let verticalInset: CGFloat = 8
-    private static let addButtonSize: CGFloat = 24
+    private static let controlButtonSize: CGFloat = 24
+    private static let controlButtonSpacing: CGFloat = 4
 
     init(frame: NSRect, sourceRange: NSRange, table: MarkdownTable,
          onActivate: @escaping (NSRange) -> Void,
@@ -42,6 +48,10 @@ final class InlineTableView: NSView, NSTextFieldDelegate {
                            action: #selector(addRow))
         configureAddButton(addColumnButton, label: localized("Add Column"),
                            action: #selector(addColumn))
+        configureAddButton(removeRowButton, symbol: "minus", label: localized("Remove Row"),
+                           action: #selector(removeRow))
+        configureAddButton(removeColumnButton, symbol: "minus", label: localized("Remove Column"),
+                           action: #selector(removeColumn))
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) non supportato") }
@@ -61,11 +71,15 @@ final class InlineTableView: NSView, NSTextFieldDelegate {
     }
 
     private var tableBounds: NSRect {
-        bounds.insetBy(dx: Self.controlGutter, dy: 0)
+        NSRect(x: 0,
+               y: Self.columnControlGutter,
+               width: max(0, bounds.width - Self.rowControlGutter),
+               height: max(0, bounds.height - Self.columnControlGutter))
     }
 
-    private func configureAddButton(_ button: NSButton, label: String, action: Selector) {
-        button.image = NSImage(systemSymbolName: "plus", accessibilityDescription: label)
+    private func configureAddButton(_ button: NSButton, symbol: String = "plus",
+                                    label: String, action: Selector) {
+        button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)
         button.imagePosition = .imageOnly
         button.imageScaling = .scaleProportionallyDown
         button.bezelStyle = .circular
@@ -89,6 +103,8 @@ final class InlineTableView: NSView, NSTextFieldDelegate {
         }
         addRowButton.contentTintColor = Theme.current.text
         addColumnButton.contentTintColor = Theme.current.text
+        removeRowButton.contentTintColor = Theme.current.text
+        removeColumnButton.contentTintColor = Theme.current.text
         needsDisplay = true
     }
 
@@ -133,52 +149,139 @@ final class InlineTableView: NSView, NSTextFieldDelegate {
             for (column, field) in fieldRow.enumerated() {
                 field.frame = NSRect(
                     x: tableBounds.minX + CGFloat(column) * columnWidth + Self.horizontalInset,
-                    y: CGFloat(row) * Self.rowHeight + Self.verticalInset,
+                    y: tableBounds.minY + CGFloat(row) * Self.rowHeight + Self.verticalInset,
                     width: max(0, columnWidth - Self.horizontalInset * 2),
                     height: Self.rowHeight - Self.verticalInset * 2)
             }
         }
-
-        let buttonSize = Self.addButtonSize
-        addColumnButton.frame = NSRect(x: tableBounds.maxX - buttonSize / 2,
-                                       y: (Self.rowHeight - buttonSize) / 2,
-                                       width: buttonSize, height: buttonSize)
-        addRowButton.frame = NSRect(x: tableBounds.minX - buttonSize / 2,
-                                    y: tableBounds.maxY - Self.rowHeight / 2 - buttonSize / 2,
-                                    width: buttonSize, height: buttonSize)
+        positionControls()
     }
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
-        if let rowHoverTrackingArea { removeTrackingArea(rowHoverTrackingArea) }
-        if let columnHoverTrackingArea { removeTrackingArea(columnHoverTrackingArea) }
+        rowControlTrackingAreas.forEach(removeTrackingArea)
+        columnControlTrackingAreas.forEach(removeTrackingArea)
+        rowControlTrackingAreas.removeAll()
+        columnControlTrackingAreas.removeAll()
 
         let tableBounds = tableBounds
         let options: NSTrackingArea.Options = [.mouseEnteredAndExited, .activeInKeyWindow]
-        let rowArea = NSTrackingArea(
-            rect: NSRect(x: tableBounds.minX - Self.controlGutter,
-                         y: tableBounds.maxY - Self.rowHeight,
-                         width: Self.controlGutter * 2, height: Self.rowHeight),
-            options: options, owner: self, userInfo: nil)
-        let columnArea = NSTrackingArea(
-            rect: NSRect(x: tableBounds.maxX - Self.controlGutter,
-                         y: tableBounds.minY,
-                         width: Self.controlGutter * 2, height: Self.rowHeight),
-            options: options, owner: self, userInfo: nil)
-        addTrackingArea(rowArea)
-        addTrackingArea(columnArea)
-        rowHoverTrackingArea = rowArea
-        columnHoverTrackingArea = columnArea
+
+        for row in table.rows.indices {
+            let area = NSTrackingArea(
+                rect: NSRect(x: tableBounds.maxX,
+                             y: tableBounds.minY + CGFloat(row + 1) * Self.rowHeight,
+                             width: Self.rowControlGutter, height: Self.rowHeight),
+                options: options, owner: self,
+                userInfo: ["row": row])
+            addTrackingArea(area)
+            rowControlTrackingAreas.append(area)
+        }
+
+        let columnWidth = tableBounds.width / CGFloat(max(1, table.columnCount))
+        for column in 0..<table.columnCount {
+            let area = NSTrackingArea(
+                rect: NSRect(x: tableBounds.minX + CGFloat(column) * columnWidth,
+                             y: tableBounds.minY - Self.columnControlGutter,
+                             width: columnWidth, height: Self.columnControlGutter),
+                options: options, owner: self,
+                userInfo: ["column": column])
+            addTrackingArea(area)
+            columnControlTrackingAreas.append(area)
+        }
     }
 
     override func mouseEntered(with event: NSEvent) {
-        if event.trackingArea === rowHoverTrackingArea { addRowButton.alphaValue = 1 }
-        if event.trackingArea === columnHoverTrackingArea { addColumnButton.alphaValue = 1 }
+        guard let trackingArea = event.trackingArea else { return }
+        if let row = trackingArea.userInfo?["row"] as? Int {
+            activeRow = row
+            updateRowControlLabels(row)
+            positionControls()
+            removeRowButton.isEnabled = table.rows.count > 1
+            removeRowButton.alphaValue = 1
+            addRowButton.alphaValue = 1
+        }
+        if let column = trackingArea.userInfo?["column"] as? Int {
+            activeColumn = column
+            updateColumnControlLabels(column)
+            positionControls()
+            removeColumnButton.isEnabled = table.columnCount > 1
+            removeColumnButton.alphaValue = 1
+            addColumnButton.alphaValue = 1
+        }
     }
 
     override func mouseExited(with event: NSEvent) {
-        if event.trackingArea === rowHoverTrackingArea { addRowButton.alphaValue = 0 }
-        if event.trackingArea === columnHoverTrackingArea { addColumnButton.alphaValue = 0 }
+        guard let trackingArea = event.trackingArea else { return }
+        if let row = trackingArea.userInfo?["row"] as? Int, activeRow == row {
+            removeRowButton.alphaValue = 0
+            addRowButton.alphaValue = 0
+            activeRow = nil
+        }
+        if let column = trackingArea.userInfo?["column"] as? Int, activeColumn == column {
+            removeColumnButton.alphaValue = 0
+            addColumnButton.alphaValue = 0
+            activeColumn = nil
+        }
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        if !tableBounds.contains(point), let textView = superview as? NSTextView {
+            // Il margine appartiene alla tabella per ricevere l'hover, ma un clic
+            // lontano dai pulsanti deve comportarsi come un normale clic nel testo.
+            textView.mouseDown(with: event)
+            return
+        }
+        super.mouseDown(with: event)
+    }
+
+    private func positionControls() {
+        let buttonSize = Self.controlButtonSize
+        let spacing = Self.controlButtonSpacing
+        let pairWidth = buttonSize * 2 + spacing
+        let tableBounds = tableBounds
+        if let activeRow {
+            let y = tableBounds.minY + CGFloat(activeRow + 1) * Self.rowHeight
+                + (Self.rowHeight - buttonSize) / 2
+            removeRowButton.frame = NSRect(
+                x: tableBounds.maxX + spacing,
+                y: y,
+                width: buttonSize, height: buttonSize)
+            addRowButton.frame = NSRect(
+                x: tableBounds.maxX + spacing + buttonSize + spacing,
+                y: y,
+                width: buttonSize, height: buttonSize)
+        }
+        if let activeColumn {
+            let columnWidth = tableBounds.width / CGFloat(max(1, table.columnCount))
+            let pairX = tableBounds.minX + (CGFloat(activeColumn) + 0.5) * columnWidth
+                - pairWidth / 2
+            let y = tableBounds.minY - buttonSize - spacing
+            removeColumnButton.frame = NSRect(
+                x: pairX,
+                y: y,
+                width: buttonSize, height: buttonSize)
+            addColumnButton.frame = NSRect(
+                x: pairX + buttonSize + spacing,
+                y: y,
+                width: buttonSize, height: buttonSize)
+        }
+    }
+
+    private func updateRowControlLabels(_ row: Int) {
+        setLabel(String(format: localized("Remove Row %d"), row + 1), on: removeRowButton)
+        setLabel(String(format: localized("Add Row Below %d"), row + 1), on: addRowButton)
+    }
+
+    private func updateColumnControlLabels(_ column: Int) {
+        setLabel(String(format: localized("Remove Column %d"), column + 1), on: removeColumnButton)
+        setLabel(String(format: localized("Add Column After %d"), column + 1), on: addColumnButton)
+    }
+
+    private func setLabel(_ label: String, on button: NSButton) {
+        button.toolTip = label
+        button.setAccessibilityLabel(label)
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -210,16 +313,30 @@ final class InlineTableView: NSView, NSTextFieldDelegate {
     }
 
     @objc private func addRow() {
+        guard let activeRow else { return }
         var updated = editedTable
-        updated.resize(dataRows: updated.rows.count + 1, columns: updated.columnCount)
+        guard updated.insertDataRow(after: activeRow) else { return }
         commit(updated, rebuildView: true)
     }
 
     @objc private func addColumn() {
+        guard let activeColumn else { return }
         var updated = editedTable
-        let previousColumns = updated.columnCount
-        updated.resize(dataRows: updated.rows.count, columns: previousColumns + 1)
-        updated.headers[previousColumns] = String(format: localized("Column %d"), previousColumns + 1)
+        guard updated.insertColumn(after: activeColumn) else { return }
+        commit(updated, rebuildView: true)
+    }
+
+    @objc private func removeRow() {
+        guard let activeRow else { return }
+        var updated = editedTable
+        guard updated.removeDataRow(at: activeRow) else { return }
+        commit(updated, rebuildView: true)
+    }
+
+    @objc private func removeColumn() {
+        guard let activeColumn else { return }
+        var updated = editedTable
+        guard updated.removeColumn(at: activeColumn) else { return }
         commit(updated, rebuildView: true)
     }
 
@@ -262,6 +379,10 @@ final class InlineTableView: NSView, NSTextFieldDelegate {
     }
 
     private func commit(_ updated: MarkdownTable, rebuildView: Bool = false) {
+        // I pulsanti strutturali non prendono il focus al field editor. Chiudere
+        // esplicitamente l'eventuale modifica in corso permette alla griglia di
+        // essere ricostruita subito dopo l'aggiunta o la rimozione di celle.
+        if rebuildView { window?.endEditing(for: self) }
         guard updated != table else { return }
 
         // Il testo Markdown può cambiare lunghezza a ogni cella. Conservare il

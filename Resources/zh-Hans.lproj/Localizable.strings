@@ -50,6 +50,12 @@
 "Columns:" = "列：";
 "Add Row" = "添加行";
 "Add Column" = "添加列";
+"Remove Row" = "移除行";
+"Remove Column" = "移除列";
+"Remove Row %d" = "移除第 %d 行";
+"Remove Column %d" = "移除第 %d 列";
+"Add Row Below %d" = "在第 %d 行下方添加";
+"Add Column After %d" = "在第 %d 列后添加";
 "Cancel" = "取消";
 "Apply" = "適用";
 "Column %d" = "第 %d 列";

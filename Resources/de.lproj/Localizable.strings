@@ -50,6 +50,12 @@
 "Columns:" = "Spalten:";
 "Add Row" = "Zeile hinzufügen";
 "Add Column" = "Spalte hinzufügen";
+"Remove Row" = "Zeile entfernen";
+"Remove Column" = "Spalte entfernen";
+"Remove Row %d" = "Zeile %d entfernen";
+"Remove Column %d" = "Spalte %d entfernen";
+"Add Row Below %d" = "Zeile unter Zeile %d hinzufügen";
+"Add Column After %d" = "Spalte nach Spalte %d hinzufügen";
 "Cancel" = "Abbrechen";
 "Apply" = "Anwenden";
 "Column %d" = "Spalte %d";

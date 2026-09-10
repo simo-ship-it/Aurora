@@ -35,6 +35,43 @@ public struct MarkdownTable: Equatable {
         normalize()
     }
 
+    @discardableResult
+    public mutating func insertDataRow(after index: Int) -> Bool {
+        guard rows.indices.contains(index) else { return false }
+        rows.insert(Array(repeating: "", count: columnCount), at: index + 1)
+        return true
+    }
+
+    @discardableResult
+    public mutating func insertColumn(after index: Int) -> Bool {
+        guard headers.indices.contains(index) else { return false }
+        let insertionIndex = index + 1
+        headers.insert("", at: insertionIndex)
+        delimiter.insert("---", at: insertionIndex)
+        for row in rows.indices {
+            rows[row].insert("", at: insertionIndex)
+        }
+        return true
+    }
+
+    @discardableResult
+    public mutating func removeDataRow(at index: Int) -> Bool {
+        guard rows.count > 1, rows.indices.contains(index) else { return false }
+        rows.remove(at: index)
+        return true
+    }
+
+    @discardableResult
+    public mutating func removeColumn(at index: Int) -> Bool {
+        guard columnCount > 1, headers.indices.contains(index) else { return false }
+        headers.remove(at: index)
+        delimiter.remove(at: index)
+        for row in rows.indices {
+            rows[row].remove(at: index)
+        }
+        return true
+    }
+
     /// La forma GFM leggibile dall'utente. I ritorni a capo e le barre dentro
     /// una cella non sono rappresentabili dal parser dell'app: vengono resi
     /// innocui, così una modifica non può spezzare la tabella circostante.

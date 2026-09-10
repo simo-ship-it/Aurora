@@ -18,6 +18,34 @@ func runTableTests() {
         Check.expect(table.markdown.contains("| riga | nuova | ok |"),
                      "i dati inseriti nella griglia finiscono nel Markdown")
 
+        var positioned = MarkdownTable(headers: ["A", "B"],
+                                       rows: [["1A", "1B"], ["2A", "2B"]])
+        Check.expect(positioned.insertDataRow(after: 0),
+                     "il più inserisce una riga sotto quella scelta")
+        Check.equal(positioned.rows, [["1A", "1B"], ["", ""], ["2A", "2B"]],
+                    "la nuova riga mantiene la posizione scelta")
+        Check.expect(positioned.insertColumn(after: 0),
+                     "il più inserisce una colonna dopo quella scelta")
+        Check.equal(positioned.headers, ["A", "", "B"],
+                    "la nuova colonna mantiene la posizione scelta")
+        Check.equal(positioned.rows[2], ["2A", "", "2B"],
+                    "le celle della nuova colonna sono vuote")
+
+        Check.expect(table.removeDataRow(at: 0), "si può rimuovere una riga specifica")
+        Check.equal(table.rows, [["riga", "nuova", "ok"]],
+                    "rimuovere una riga conserva quella selezionata")
+        Check.expect(!table.removeDataRow(at: 0),
+                     "la tabella conserva almeno una riga di dati")
+
+        Check.expect(table.removeColumn(at: 1), "si può rimuovere una colonna specifica")
+        Check.equal(table.headers, ["Nome", "Note"],
+                    "rimuovere una colonna conserva le intestazioni circostanti")
+        Check.equal(table.rows, [["riga", "ok"]],
+                    "rimuovere una colonna conserva le celle circostanti")
+        Check.expect(table.removeColumn(at: 1), "si può ridurre la tabella a una colonna")
+        Check.expect(!table.removeColumn(at: 0),
+                     "la tabella conserva almeno una colonna")
+
         let safe = MarkdownTable(headers: ["a|b"], rows: [["una\ndue"]])
         Check.equal(safe.markdown, "| a¦b |\n| --- |\n| una due |",
                     "una cella non può spezzare la struttura della tabella")

@@ -50,6 +50,12 @@
 "Columns:" = "Colonne:";
 "Add Row" = "Aggiungi riga";
 "Add Column" = "Aggiungi colonna";
+"Remove Row" = "Rimuovi riga";
+"Remove Column" = "Rimuovi colonna";
+"Remove Row %d" = "Rimuovi riga %d";
+"Remove Column %d" = "Rimuovi colonna %d";
+"Add Row Below %d" = "Aggiungi riga sotto la riga %d";
+"Add Column After %d" = "Aggiungi colonna dopo la colonna %d";
 "Cancel" = "Annulla";
 "Apply" = "Applica";
 "Column %d" = "Colonna %d";
