@@ -4,6 +4,10 @@ import UniformTypeIdentifiers
 
 final class MarkdownDocument: NSDocument {
 
+    /// Misura usata solo per una finestra nuova; AppKit ripristina poi quella
+    /// che l'utente ha scelto grazie al nome di autosalvataggio del frame.
+    private static let initialContentSize = NSSize(width: 900, height: 760)
+
     var text: String = ""
     private weak var editor: EditorViewController?
 
@@ -11,15 +15,13 @@ final class MarkdownDocument: NSDocument {
 
     override func makeWindowControllers() {
         let editor = EditorViewController()
-        // Una finestra guidata da un view controller prende la misura da lui, e
-        // un'area di scorrimento non ne dichiara alcuna: senza questa riga la
-        // finestra si apre grande quanto il proprio minimo consentito — cosa che
-        // si vede solo al primo avvio, finché nessuna misura è stata salvata.
-        editor.preferredContentSize = EditorViewController.preferredSize
         self.editor = editor
 
+        // La misura iniziale vive qui, dove la finestra viene creata. Impostarla
+        // anche nel view controller fa ricalcolare il frame quando la sua vista
+        // compare, producendo un ridimensionamento visibile dopo l'apertura.
         let window = NSWindow(
-            contentRect: NSRect(origin: .zero, size: EditorViewController.preferredSize),
+            contentRect: NSRect(origin: .zero, size: Self.initialContentSize),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered, defer: false)
 

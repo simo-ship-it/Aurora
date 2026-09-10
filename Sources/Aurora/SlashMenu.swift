@@ -132,6 +132,8 @@ final class SlashMenuController: NSObject, NSTableViewDataSource, NSTableViewDel
     private static let width: CGFloat = 300
     private static let padding: CGFloat = 8
     private static let maxVisibleRows = 8
+    private static let caretGap: CGFloat = 6
+    private static let screenMargin: CGFloat = 8
 
     var isVisible: Bool { panel.isVisible }
 
@@ -194,14 +196,17 @@ final class SlashMenuController: NSObject, NSTableViewDataSource, NSTableViewDel
 
         let rows = min(shown.count, Self.maxVisibleRows)
         let height = CGFloat(rows) * Self.rowHeight + Self.padding * 2
-        var frame = NSRect(x: caret.minX, y: caret.minY - height - 6,
+        var frame = NSRect(x: caret.minX, y: caret.minY - height - Self.caretGap,
                            width: Self.width, height: height)
 
         if let screen = host?.screen ?? NSScreen.main {
             let limits = screen.visibleFrame
-            frame.origin.x = min(max(limits.minX + 8, frame.origin.x), limits.maxX - Self.width - 8)
+            frame.origin.x = min(max(limits.minX + Self.screenMargin, frame.origin.x),
+                                 limits.maxX - Self.width - Self.screenMargin)
             // Se sotto non ci sta, il menu si apre sopra il cursore.
-            if frame.minY < limits.minY + 8 { frame.origin.y = caret.maxY + 6 }
+            if frame.minY < limits.minY + Self.screenMargin {
+                frame.origin.y = caret.maxY + Self.caretGap
+            }
         }
         panel.setFrame(frame, display: true)
 

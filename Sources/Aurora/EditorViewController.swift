@@ -4,10 +4,6 @@ import AuroraCore
 /// Contiene l'area di scrittura: colonna centrata a larghezza fissa, come in Typora.
 final class EditorViewController: NSViewController, NSTextViewDelegate {
 
-    /// La misura con cui si apre una finestra nuova. Sta qui e non nella
-    /// finestra perché è una scelta sul testo: quanto ne sta sotto gli occhi.
-    static let preferredSize = NSSize(width: 900, height: 760)
-
     private(set) var textView: MarkdownTextView!
     private var scrollView: NSScrollView!
     private var theme: Theme { Theme.current }
