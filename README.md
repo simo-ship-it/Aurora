@@ -187,10 +187,10 @@ read the text, return indices, know nothing about fonts, colours or views. It is
 also what makes it testable on its own.
 
 The delicate part is hiding the syntax without touching the text. Aurora uses
-the TextKit 1 stack and, through the layout manager delegate, assigns the null
-glyph to characters carrying an internal attribute: the markers stay in the
-document but take up no space. When the selection enters a line, the attribute
-is removed and the markers reappear in grey.
+the TextKit 1 stack and, through the layout manager delegate, treats characters
+carrying an internal attribute as zero-width controls: the markers stay in the
+document and in their own line but take up no space. When the selection enters
+a line, the attribute is removed and the markers reappear in grey.
 
 To stay fluid on large files, styling is not recomputed everywhere on every
 keystroke: it updates the lines that changed, those entering or leaving the
@@ -200,12 +200,10 @@ follows: the styler notices by comparing the fence state before and after the
 edit.
 
 The drawn decorations — the code surface, the quote bar, the horizontal rule,
-the list markers — never ask the layout where a character's glyph is. They
-cannot: hidden characters have the null glyph, and the layout attributes them to
-the *previous* line's fragment, so every decoration would land one line too high.
-Instead the visible line fragments are enumerated and the ones that **begin**
-inside the decorated range are kept: the fragment of the right line always begins
-in there, at most containing only its own line break.
+the list markers — do not depend on the rectangle of a hidden character, which
+has zero width and therefore provides no useful geometric anchor. Instead the
+visible line fragments are enumerated and matched with character ranges, keeping
+every decoration attached to its own line.
 
 Tables are the only place where drawing interferes with text spacing. TextKit
 can lay out real tables, but it wants one cell per paragraph, whereas here a

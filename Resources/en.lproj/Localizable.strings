@@ -38,6 +38,8 @@
 "Highlight" = "Highlight";
 "Inline Code" = "Inline Code";
 "Paragraph" = "Paragraph";
+"Promote Heading" = "Promote Heading";
+"Demote Heading" = "Demote Heading";
 "Heading %d" = "Heading %d";
 "Bulleted List" = "Bulleted List";
 "Task List" = "Task List";
@@ -72,6 +74,8 @@
 "Choose the folder to work in." = "Choose the folder to work in.";
 "Working folder" = "Working folder";
 "Files in the working folder" = "Files in the working folder";
+"Open Working Folder in Finder" = "Open Working Folder in Finder";
+"Open Working Folder in Claude Cowork" = "Open Working Folder in Claude Cowork";
 "Choose the working folder" = "Choose the working folder";
 "No Folder" = "No Folder";
 "Click the name above to choose a folder." = "Click the name above to choose a folder.";

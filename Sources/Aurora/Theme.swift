@@ -140,7 +140,7 @@ struct Theme {
 }
 
 extension NSAttributedString.Key {
-    /// I caratteri con questo attributo non generano glifi (sintassi nascosta).
+    /// I caratteri con questo attributo diventano controlli a larghezza zero.
     static let auroraConceal = NSAttributedString.Key("auroraConceal")
     /// Decorazione di blocco disegnata dietro al testo: "code", "table", "hr".
     static let auroraBlock = NSAttributedString.Key("auroraBlock")

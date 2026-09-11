@@ -38,6 +38,8 @@
 "Highlight" = "ハイライト";
 "Inline Code" = "インラインコード";
 "Paragraph" = "段落";
+"Promote Heading" = "見出しレベルを上げる";
+"Demote Heading" = "見出しレベルを下げる";
 "Heading %d" = "見出し %d";
 "Bulleted List" = "箇条書きリスト";
 "Task List" = "タスクリスト";
@@ -72,6 +74,8 @@
 "Choose the folder to work in." = "作業するフォルダを選択してください。";
 "Working folder" = "作業フォルダ";
 "Files in the working folder" = "作業フォルダ内のファイル";
+"Open Working Folder in Finder" = "作業フォルダをFinderで開く";
+"Open Working Folder in Claude Cowork" = "作業フォルダをClaude Coworkで開く";
 "Choose the working folder" = "作業フォルダを選択";
 "No Folder" = "フォルダなし";
 "Click the name above to choose a folder." = "上の名前をクリックしてフォルダを選択します。";

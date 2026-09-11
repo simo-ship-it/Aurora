@@ -198,6 +198,7 @@ final class MarkdownStyler: NSObject, NSTextStorageDelegate {
         guard line.range.length > 0 else { return }
         let active = activeLines.contains(index)
         let isCode = line.kind == .codeBody || line.kind == .fence
+        let showsBlockSource = shouldShowBlockSource(for: line, active: active)
 
         // --- Font e paragrafo di base per la riga
         var baseFont = theme.body
@@ -226,10 +227,10 @@ final class MarkdownStyler: NSObject, NSTextStorageDelegate {
         ]
         if baselineOffset != 0 { attributes[.baselineOffset] = baselineOffset }
         if isCode { attributes[.auroraBlock] = "code" }
-        // Il tratto si disegna solo quando i trattini sono nascosti: sulla riga
-        // attiva si vede la sorgente, non la sorgente *e* la sua anteprima.
-        // Stessa regola dei pallini di elenco e delle caselle di spunta.
-        if line.kind == .horizontalRule, !active { attributes[.auroraBlock] = "hr" }
+        // Il tratto si disegna solo quando i trattini sono nascosti: si vede la
+        // sorgente oppure la decorazione, mai entrambe. La scelta è centralizzata
+        // in `shouldShowBlockSource` insieme agli altri elementi di blocco.
+        if line.kind == .horizontalRule, !showsBlockSource { attributes[.auroraBlock] = "hr" }
         if case .heading(let level) = line.kind { attributes[.kern] = theme.headingTracking(level) }
         if line.quoteDepth > 0 { attributes[.auroraQuoteDepth] = line.quoteDepth }
 
@@ -259,18 +260,18 @@ final class MarkdownStyler: NSObject, NSTextStorageDelegate {
         }
 
         // --- Riga ``` : nascosta quando non si sta modificando, fa da margine del riquadro
-        if line.kind == .fence, !active, line.contentRange.length > 0 {
+        if line.kind == .fence, !showsBlockSource, line.contentRange.length > 0 {
             storage.addAttribute(.auroraConceal, value: true, range: line.contentRange)
         }
 
         // --- Marcatori di blocco (#, >, ```, rientri)
         for marker in line.markers {
-            conceal(marker, active: active, storage: storage)
+            conceal(marker, active: showsBlockSource, storage: storage)
         }
 
         // --- Elenchi puntati: pallino disegnato al posto del trattino
         if let bullet = line.bulletRange, bullet.length > 0 {
-            if active {
+            if showsBlockSource {
                 storage.addAttribute(.foregroundColor, value: theme.syntax, range: bullet)
             } else {
                 storage.addAttributes([.foregroundColor: NSColor.clear,
@@ -286,7 +287,7 @@ final class MarkdownStyler: NSObject, NSTextStorageDelegate {
 
         // --- Task list: casella disegnata al posto di "[ ]"
         if let checkbox = line.checkboxRange {
-            if active {
+            if showsBlockSource {
                 storage.addAttribute(.foregroundColor, value: theme.syntax, range: checkbox)
             } else {
                 storage.addAttributes([.foregroundColor: NSColor.clear,
@@ -300,11 +301,22 @@ final class MarkdownStyler: NSObject, NSTextStorageDelegate {
         }
 
         // --- Linea orizzontale: caratteri nascosti, il tratto è disegnato dalla vista
-        if line.kind == .horizontalRule, !active {
+        if line.kind == .horizontalRule, !showsBlockSource {
             let content = NSRange(location: line.range.location,
                                   length: max(0, line.contentsEnd - line.range.location))
             if content.length > 0 { storage.addAttribute(.auroraConceal, value: true, range: content) }
         }
+    }
+
+    /// Unica regola per la transizione fra sorgente Markdown e decorazione.
+    ///
+    /// Normalmente la sintassi di blocco ricompare sulla riga attiva. Una task
+    /// list fa eccezione perché la casella non è una semplice anteprima: è un
+    /// controllo interattivo e deve restare stabile mentre se ne scrive il testo.
+    /// Tutti gli elementi di blocco passano da qui, evitando eccezioni sparse
+    /// che possano far oscillare una decorazione durante la digitazione.
+    private func shouldShowBlockSource(for line: LineInfo, active: Bool) -> Bool {
+        active && line.checkboxRange == nil
     }
 
     private func bulletGlyph(for indent: Int) -> String {

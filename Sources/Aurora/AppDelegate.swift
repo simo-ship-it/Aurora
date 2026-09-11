@@ -146,6 +146,11 @@ enum MainMenu {
                     #selector(MarkdownTextView.setHeadingLevel(_:)), "\(level)", tag: level)
             }
             menu.addItem(.separator())
+            add(menu, localized("Promote Heading"),
+                #selector(MarkdownTextView.promoteHeading(_:)), "+")
+            add(menu, localized("Demote Heading"),
+                #selector(MarkdownTextView.demoteHeading(_:)), "-")
+            menu.addItem(.separator())
             add(menu, localized("Bulleted List"), #selector(MarkdownTextView.toggleBulletList(_:)), "u", [.command, .shift])
             add(menu, localized("Task List"), #selector(MarkdownTextView.toggleTaskList(_:)), "t", [.command, .shift])
             add(menu, localized("Blockquote"), #selector(MarkdownTextView.toggleBlockquote(_:)), "'", [.command, .shift])

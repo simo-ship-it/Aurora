@@ -38,6 +38,8 @@
 "Highlight" = "高亮";
 "Inline Code" = "行内代码";
 "Paragraph" = "段落";
+"Promote Heading" = "提升标题级别";
+"Demote Heading" = "降低标题级别";
 "Heading %d" = "标题 %d";
 "Bulleted List" = "项目符号列表";
 "Task List" = "任务列表";
@@ -72,6 +74,8 @@
 "Choose the folder to work in." = "请选择要使用的文件夹。";
 "Working folder" = "工作文件夹";
 "Files in the working folder" = "工作文件夹中的文件";
+"Open Working Folder in Finder" = "在访达中打开工作文件夹";
+"Open Working Folder in Claude Cowork" = "在 Claude Cowork 中打开工作文件夹";
 "Choose the working folder" = "选择工作文件夹";
 "No Folder" = "无文件夹";
 "Click the name above to choose a folder." = "点按上方的名称以选择文件夹。";

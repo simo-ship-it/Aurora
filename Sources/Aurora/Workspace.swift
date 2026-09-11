@@ -19,6 +19,7 @@ final class Workspace {
         didSet {
             guard folder != oldValue else { return }
             UserDefaults.standard.set(folder?.path, forKey: Self.defaultsKey)
+            NotificationCenter.default.post(name: .auroraWorkspaceChanged, object: self)
         }
     }
 

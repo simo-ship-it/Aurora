@@ -89,4 +89,24 @@ func runEditingTests() {
                                                   selection: NSRange(location: 2, length: 0))
         Check.equal(vuota, NSRange(location: 2, length: 0), "un cursore senza selezione resta dov'è")
     }
+
+    Check.suite("grado dei titoli") {
+        Check.equal(MarkdownEditing.promoteHeading("Testo"), "###### Testo",
+                    "alzare un paragrafo lo trasforma in H6")
+        Check.equal(MarkdownEditing.promoteHeading("###### Testo"), "##### Testo",
+                    "alzare H6 lo trasforma in H5")
+        Check.equal(MarkdownEditing.promoteHeading("## Testo"), "# Testo",
+                    "alzare H2 lo trasforma in H1")
+        Check.equal(MarkdownEditing.promoteHeading("# Testo"), "# Testo",
+                    "H1 è il grado massimo")
+
+        Check.equal(MarkdownEditing.demoteHeading("# Testo"), "## Testo",
+                    "abbassare H1 lo trasforma in H2")
+        Check.equal(MarkdownEditing.demoteHeading("###### Testo"), "Testo",
+                    "abbassare H6 lo trasforma in paragrafo")
+        Check.equal(MarkdownEditing.demoteHeading("Testo"), "Testo",
+                    "un paragrafo è il grado minimo")
+        Check.equal(MarkdownEditing.promoteHeading("#hashtag"), "###### #hashtag",
+                    "un hashtag senza spazio resta contenuto del paragrafo")
+    }
 }

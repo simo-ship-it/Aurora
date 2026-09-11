@@ -5,39 +5,72 @@ import AppKit
 final class WorkspaceButtonController: NSTitlebarAccessoryViewController {
 
     private let button = NSButton()
+    private let finderButton = NSButton()
+    private let claudeButton = NSButton()
     private let popover = NSPopover()
 
     init() {
         super.init(nibName: nil, bundle: nil)
         layoutAttribute = .right
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(workspaceChanged),
+            name: .auroraWorkspaceChanged, object: nil)
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) non supportato") }
 
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
     override func loadView() {
-        button.isBordered = false
-        button.bezelStyle = .regularSquare
-        button.image = NSImage(systemSymbolName: "folder",
-                               accessibilityDescription: localized("Working folder"))
-        button.imagePosition = .imageOnly
-        button.contentTintColor = Theme.current.quoteText
+        configure(button, symbol: "folder", label: localized("Working folder"),
+                  action: #selector(toggle(_:)))
         button.toolTip = localized("Files in the working folder")
-        button.target = self
-        button.action = #selector(toggle(_:))
-        button.translatesAutoresizingMaskIntoConstraints = false
+        configure(finderButton, symbol: "finder", fallback: "folder.fill",
+                  label: localized("Open Working Folder in Finder"),
+                  action: #selector(openInFinder(_:)))
+        configure(claudeButton, symbol: "sparkles",
+                  label: localized("Open Working Folder in Claude Cowork"),
+                  action: #selector(openInClaudeCowork(_:)))
+
+        let buttons = NSStackView(views: [button, finderButton, claudeButton])
+        buttons.orientation = .horizontal
+        buttons.alignment = .centerY
+        buttons.spacing = 2
+        buttons.translatesAutoresizingMaskIntoConstraints = false
 
         // L'accessorio della barra del titolo viene dimensionato da AppKit a
         // partire dal frame: le costanti di larghezza sul contenitore verrebbero
         // annullate dalla maschera di ridimensionamento.
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 40, height: 28))
-        container.addSubview(button)
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 88, height: 28))
+        container.addSubview(buttons)
         NSLayoutConstraint.activate([
-            button.centerXAnchor.constraint(equalTo: container.centerXAnchor),
-            button.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            buttons.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            buttons.centerYAnchor.constraint(equalTo: container.centerYAnchor),
             button.widthAnchor.constraint(equalToConstant: 26),
-            button.heightAnchor.constraint(equalToConstant: 22)
+            button.heightAnchor.constraint(equalToConstant: 22),
+            finderButton.widthAnchor.constraint(equalToConstant: 26),
+            finderButton.heightAnchor.constraint(equalToConstant: 22),
+            claudeButton.widthAnchor.constraint(equalToConstant: 26),
+            claudeButton.heightAnchor.constraint(equalToConstant: 22)
         ])
         view = container
+        updateAvailability()
+    }
+
+    private func configure(_ button: NSButton, symbol: String, fallback: String? = nil,
+                           label: String, action: Selector) {
+        button.isBordered = false
+        button.bezelStyle = .regularSquare
+        button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)
+            ?? fallback.flatMap { NSImage(systemSymbolName: $0, accessibilityDescription: label) }
+        button.imagePosition = .imageOnly
+        button.contentTintColor = Theme.current.quoteText
+        button.toolTip = label
+        button.setAccessibilityLabel(label)
+        button.target = self
+        button.action = action
     }
 
     @objc private func toggle(_ sender: Any?) {
@@ -50,6 +83,35 @@ final class WorkspaceButtonController: NSTitlebarAccessoryViewController {
         popover.contentViewController = browser
         popover.behavior = .transient
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+    }
+
+    @objc private func openInFinder(_ sender: Any?) {
+        guard let folder = Workspace.shared.folder else { NSSound.beep(); return }
+        NSWorkspace.shared.open(folder)
+    }
+
+    @objc private func openInClaudeCowork(_ sender: Any?) {
+        guard let folder = Workspace.shared.folder else { NSSound.beep(); return }
+        var link = URLComponents()
+        link.scheme = "claude"
+        link.host = "cowork"
+        link.path = "/new"
+        link.queryItems = [URLQueryItem(name: "folder", value: folder.path)]
+        guard let url = link.url else { NSSound.beep(); return }
+        NSWorkspace.shared.open(url)
+    }
+
+    @objc private func workspaceChanged() {
+        updateAvailability()
+    }
+
+    private func updateAvailability() {
+        guard isViewLoaded else { return }
+        let hasFolder = Workspace.shared.folder != nil
+        finderButton.isEnabled = hasFolder
+        let cowork = URL(string: "claude://cowork/new")
+        let hasClaude = cowork.flatMap { NSWorkspace.shared.urlForApplication(toOpen: $0) } != nil
+        claudeButton.isEnabled = hasFolder && hasClaude
     }
 }
 

@@ -183,7 +183,12 @@ final class MarkdownTextView: NSTextView, NSLayoutManagerDelegate {
             let charIndex = charIndexes[i]
             if charIndex < length,
                storage.attribute(.auroraConceal, at: charIndex, effectiveRange: nil) != nil {
-                property.insert(.null)
+                // Un glifo `.null` perde l'appartenenza alla propria riga agli
+                // occhi di TextKit: davanti a elementi consecutivi può far
+                // applicare `headIndent` invece di `firstLineHeadIndent`, per cui
+                // una lista senza Tab sembra rientrata. Un carattere di controllo
+                // a larghezza zero resta invece nella riga e non occupa spazio.
+                property.insert(.controlCharacter)
                 changed = true
             }
             modified[i] = property
@@ -198,6 +203,18 @@ final class MarkdownTextView: NSTextView, NSLayoutManagerDelegate {
         return count
     }
 
+    /// I caratteri marcati come sintassi nascosta partecipano ancora al layout
+    /// della propria riga, ma non avanzano orizzontalmente e non vengono disegnati.
+    func layoutManager(_ layoutManager: NSLayoutManager,
+                       shouldUse action: NSLayoutManager.ControlCharacterAction,
+                       forControlCharacterAt charIndex: Int) -> NSLayoutManager.ControlCharacterAction {
+        guard let storage = layoutManager.textStorage, charIndex < storage.length,
+              storage.attribute(.auroraConceal, at: charIndex, effectiveRange: nil) != nil else {
+            return action
+        }
+        return .zeroAdvancement
+    }
+
     // MARK: - Decorazioni (blocchi di codice, citazioni, linee, elenchi)
 
     /// Un frammento di riga con l'intervallo di caratteri che copre, già nelle
@@ -209,13 +226,10 @@ final class MarkdownTextView: NSTextView, NSLayoutManagerDelegate {
 
     /// Le righe inquadrate, con i caratteri di ciascuna.
     ///
-    /// È il perno di tutto il disegno delle decorazioni. La strada opposta —
-    /// chiedere al layout manager dove sta il glifo di un dato carattere — qui non
-    /// si può percorrere: Aurora nasconde la sintassi assegnando il *glifo nullo*,
-    /// e per un carattere nascosto quella domanda può rispondere con un glifo della
-    /// riga precedente, mandando la decorazione una riga più su. Enumerare i
-    /// frammenti e chiedere a ciascuno quali caratteri copre funziona invece
-    /// sempre, perché un glifo nullo appartiene comunque al frammento della sua riga.
+    /// È il perno di tutto il disegno delle decorazioni. I caratteri di sintassi
+    /// nascosti hanno avanzamento zero, quindi il loro rettangolo non è un'ancora
+    /// geometrica utile; il frammento della riga conserva invece sia la geometria
+    /// sia l'intervallo di caratteri a cui appartiene.
     private func lineBoxes(_ layout: NSLayoutManager, glyphs: NSRange, origin: NSPoint) -> [LineBox] {
         var boxes: [LineBox] = []
         layout.enumerateLineFragments(forGlyphRange: glyphs) { rect, _, _, glyphRange, _ in
@@ -250,12 +264,9 @@ final class MarkdownTextView: NSTextView, NSLayoutManagerDelegate {
         /// Le righe di una decorazione: quelle che *cominciano* dentro il suo
         /// intervallo di caratteri.
         ///
-        /// Non si può chiedere quale riga *contiene* il primo carattere: i caratteri
-        /// nascosti hanno glifo nullo e il layout li attribuisce al frammento della
-        /// riga precedente. Cercare a partire da loro atterra sempre una riga più su
-        /// — la linea orizzontale disegnata sopra i trattini, il riquadro del codice
-        /// che parte una riga prima. Il frammento della riga giusta, invece,
-        /// comincia sempre dentro l'intervallo: al più contiene solo l'a-capo.
+        /// Si usa la copertura in caratteri anziché il rettangolo della sintassi:
+        /// quest'ultimo può avere larghezza zero. Il frammento conserva invece la
+        /// riga corretta anche quando il suo prefisso non occupa spazio.
         func rows(in range: NSRange) -> [NSRect] {
             boxes.filter { NSLocationInRange($0.characters.location, range) }.map(\.rect)
         }
@@ -520,6 +531,16 @@ final class MarkdownTextView: NSTextView, NSLayoutManagerDelegate {
         }
     }
 
+    @objc func promoteHeading(_ sender: Any?) {
+        guard activeInlineTableRange == nil else { return }
+        transformLines { _, text in MarkdownEditing.promoteHeading(text) }
+    }
+
+    @objc func demoteHeading(_ sender: Any?) {
+        guard activeInlineTableRange == nil else { return }
+        transformLines { _, text in MarkdownEditing.demoteHeading(text) }
+    }
+
     @objc func toggleBlockquote(_ sender: Any?) {
         let allQuoted = selectedLineTexts().allSatisfy {
             $0.trimmingCharacters(in: .whitespaces).hasPrefix(">")
@@ -756,10 +777,9 @@ final class MarkdownTextView: NSTextView, NSLayoutManagerDelegate {
             if !headers.isEmpty {
                 let range = NSRange(location: all[first].range.location,
                                     length: all[last].contentsEnd - all[first].range.location)
-                // Le righe della tabella hanno glifi nulli. Cercarne la posizione
-                // a partire dal primo carattere può quindi restituire il frammento
-                // precedente; usiamo la stessa enumerazione robusta delle altre
-                // decorazioni del documento.
+                // La sorgente della tabella ha avanzamento zero. Usiamo la stessa
+                // enumerazione dei frammenti delle altre decorazioni del documento,
+                // che non dipende dal rettangolo dei caratteri nascosti.
                 if let line = boxes.first(where: {
                     NSLocationInRange($0.characters.location, all[first].range)
                 })?.rect {
@@ -1047,6 +1067,7 @@ final class MarkdownTextView: NSTextView, NSLayoutManagerDelegate {
         switch menuItem.action {
         case #selector(toggleBold(_:)), #selector(toggleItalic(_:)), #selector(toggleStrikethrough(_:)),
              #selector(toggleInlineCode(_:)), #selector(toggleHighlight(_:)), #selector(setHeadingLevel(_:)),
+             #selector(promoteHeading(_:)), #selector(demoteHeading(_:)),
              #selector(toggleBlockquote(_:)), #selector(toggleBulletList(_:)), #selector(toggleTaskList(_:)),
              #selector(insertHorizontalRule(_:)), #selector(insertLink(_:)), #selector(insertCodeBlock(_:)),
              #selector(insertTable(_:)):

@@ -33,4 +33,32 @@ public enum MarkdownEditing {
             ? NSRange(location: start, length: end - start)
             : NSRange(location: selection.location, length: 0)
     }
+
+    /// Rende un titolo progressivamente più importante. Un paragrafo entra
+    /// nella scala da H6, poi prosegue fino a H1.
+    public static func promoteHeading(_ text: String) -> String {
+        let (level, body) = heading(in: text)
+        let next = level == 0 ? 6 : max(1, level - 1)
+        return heading(body, level: next)
+    }
+
+    /// Percorre la scala inversa; dopo H6 si torna a un paragrafo normale.
+    public static func demoteHeading(_ text: String) -> String {
+        let (level, body) = heading(in: text)
+        guard level > 0 else { return text }
+        let next = level == 6 ? 0 : level + 1
+        return heading(body, level: next)
+    }
+
+    private static func heading(in text: String) -> (level: Int, body: String) {
+        let level = text.prefix { $0 == "#" }.count
+        guard (1...6).contains(level), text.dropFirst(level).first == " " else {
+            return (0, text)
+        }
+        return (level, String(text.dropFirst(level + 1)))
+    }
+
+    private static func heading(_ body: String, level: Int) -> String {
+        level == 0 ? body : String(repeating: "#", count: level) + " " + body
+    }
 }

@@ -13,4 +13,6 @@ func localized(_ key: String) -> String {
 extension Notification.Name {
     /// L'aspetto è cambiato nelle impostazioni: chi mostra testo si ridisegni.
     static let auroraThemeChanged = Notification.Name("AuroraThemeChanged")
+    /// La cartella di lavoro è cambiata: i controlli che la usano si aggiornino.
+    static let auroraWorkspaceChanged = Notification.Name("AuroraWorkspaceChanged")
 }

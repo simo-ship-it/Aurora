@@ -38,6 +38,8 @@
 "Highlight" = "Hervorgehoben";
 "Inline Code" = "Inline-Code";
 "Paragraph" = "Absatz";
+"Promote Heading" = "Überschrift hochstufen";
+"Demote Heading" = "Überschrift herabstufen";
 "Heading %d" = "Überschrift %d";
 "Bulleted List" = "Aufzählung";
 "Task List" = "Aufgabenliste";
@@ -72,6 +74,8 @@
 "Choose the folder to work in." = "Wähle den Ordner, in dem du arbeiten möchtest.";
 "Working folder" = "Arbeitsordner";
 "Files in the working folder" = "Dateien im Arbeitsordner";
+"Open Working Folder in Finder" = "Arbeitsordner im Finder öffnen";
+"Open Working Folder in Claude Cowork" = "Arbeitsordner in Claude Cowork öffnen";
 "Choose the working folder" = "Arbeitsordner wählen";
 "No Folder" = "Kein Ordner";
 "Click the name above to choose a folder." = "Klicke oben auf den Namen, um einen Ordner zu wählen.";

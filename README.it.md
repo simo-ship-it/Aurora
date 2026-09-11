@@ -189,10 +189,11 @@ promette — leggere il testo, restituire indici, non sapere nulla di font, colo
 o viste. È anche ciò che lo rende verificabile da solo.
 
 Il punto delicato è nascondere la sintassi senza toccare il testo. Aurora usa lo
-stack TextKit 1 e, tramite il delegato del layout manager, assegna il glifo nullo ai
-caratteri marcati con un attributo interno: i marcatori restano nel documento ma non
-occupano spazio. Quando la selezione entra in una riga, l'attributo viene tolto e i
-marcatori riappaiono in grigio.
+stack TextKit 1 e, tramite il delegato del layout manager, tratta i caratteri
+marcati con un attributo interno come controlli a larghezza zero: i marcatori
+restano nel documento e nella propria riga ma non occupano spazio. Quando la
+selezione entra in una riga, l'attributo viene tolto e i marcatori riappaiono in
+grigio.
 
 Per restare fluido su file grandi, lo stile non viene ricalcolato ovunque a ogni
 tasto: si aggiornano le righe modificate, quelle che entrano o escono dalla selezione
@@ -201,12 +202,10 @@ o la chiusura di un blocco di codice, che cambia l'aspetto di tutto ciò che seg
 styler se ne accorge confrontando lo stato dei blocchi prima e dopo la modifica.
 
 Le decorazioni disegnate — il riquadro del codice, la barra delle citazioni, la
-linea orizzontale, i segni di elenco — non chiedono mai al layout dove stia il glifo
-di un carattere. Non si può: i caratteri nascosti hanno glifo nullo, e il layout li
-attribuisce al frammento della riga *precedente*, per cui ogni decorazione finirebbe
-una riga più su. Si enumerano invece i frammenti di riga inquadrati e si tengono
-quelli che **cominciano** dentro l'intervallo decorato: il frammento della riga giusta
-comincia sempre lì dentro, al più contenendo solo il proprio a-capo.
+linea orizzontale, i segni di elenco — non dipendono dal rettangolo di un carattere
+nascosto, che avendo larghezza zero non è un'ancora geometrica utile. Si enumerano
+invece i frammenti di riga inquadrati e si incrociano con gli intervalli di caratteri:
+ogni decorazione resta così legata alla propria riga.
 
 Le tabelle sono l'unico posto dove il disegno interviene sulla spaziatura del testo.
 TextKit sa impaginare tabelle vere, ma vuole una cella per paragrafo, mentre qui una
