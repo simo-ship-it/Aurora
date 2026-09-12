@@ -15,4 +15,6 @@ extension Notification.Name {
     static let auroraThemeChanged = Notification.Name("AuroraThemeChanged")
     /// La cartella di lavoro è cambiata: i controlli che la usano si aggiornino.
     static let auroraWorkspaceChanged = Notification.Name("AuroraWorkspaceChanged")
+    /// L'elenco dei collegamenti alle cartelle è cambiato.
+    static let auroraFavoritesChanged = Notification.Name("AuroraFavoritesChanged")
 }

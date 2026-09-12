@@ -2,6 +2,8 @@ import AppKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
+    private let startPage = StartPageWindowController()
+
     func applicationWillFinishLaunching(_ notification: Notification) {
         // Le preferenze costruiscono il tema: vanno lette prima che esista una
         // finestra, altrimenti la prima si aprirebbe con le misure predefinite
@@ -12,12 +14,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        startPage.show()
         NSApp.activate(ignoringOtherApps: true)
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
-    func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool { true }
+    /// All'avvio la pagina iniziale sostituisce il documento vuoto: l'utente
+    /// sceglie prima il contesto in cui vuole lavorare.
+    func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool { false }
 
     /// Sceglie la cartella di lavoro, cioè quella che il pulsante in barra del
     /// titolo elenca. Non apre nessun documento: cambia il contesto, non la vista.
@@ -37,6 +42,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func showSettings(_ sender: Any?) {
         SettingsWindowController.shared.show()
+    }
+
+    @objc func showStartPage(_ sender: Any?) {
+        startPage.show()
     }
 }
 
@@ -88,6 +97,8 @@ enum MainMenu {
 
     private static func fileMenu() -> NSMenuItem {
         submenu(localized("File")) { menu in
+            add(menu, localized("Start Page"), #selector(AppDelegate.showStartPage(_:)))
+            menu.addItem(.separator())
             add(menu, localized("New"), #selector(NSDocumentController.newDocument(_:)), "n")
             add(menu, localized("Open…"), #selector(NSDocumentController.openDocument(_:)), "o")
             add(menu, localized("Open Folder…"), #selector(AppDelegate.openFolder(_:)), "o", [.command, .shift])
