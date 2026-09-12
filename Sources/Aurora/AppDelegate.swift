@@ -20,6 +20,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
+    func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool { true }
+
     /// All'avvio la pagina iniziale sostituisce il documento vuoto: l'utente
     /// sceglie prima il contesto in cui vuole lavorare.
     func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool { false }
@@ -46,6 +48,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func showStartPage(_ sender: Any?) {
         startPage.show()
+    }
+
+    @objc func addFavoriteFolder(_ sender: Any?) {
+        startPage.addFavoriteFolder()
     }
 }
 
@@ -98,6 +104,7 @@ enum MainMenu {
     private static func fileMenu() -> NSMenuItem {
         submenu(localized("File")) { menu in
             add(menu, localized("Start Page"), #selector(AppDelegate.showStartPage(_:)))
+            add(menu, localized("Add Favorite…"), #selector(AppDelegate.addFavoriteFolder(_:)))
             menu.addItem(.separator())
             add(menu, localized("New"), #selector(NSDocumentController.newDocument(_:)), "n")
             add(menu, localized("Open…"), #selector(NSDocumentController.openDocument(_:)), "o")
