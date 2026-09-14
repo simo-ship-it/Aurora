@@ -17,6 +17,8 @@ final class MarkdownDocument: NSDocument {
         let editor = EditorViewController()
         self.editor = editor
 
+        Workspace.shared.rememberDocument(fileURL)
+
         // La misura iniziale vive qui, dove la finestra viene creata. Impostarla
         // anche nel view controller fa ricalcolare il frame quando la sua vista
         // compare, producendo un ridimensionamento visibile dopo l'apertura.
@@ -52,6 +54,12 @@ final class MarkdownDocument: NSDocument {
             self.updateChangeCount(.changeDone)
         }
         DispatchQueue.main.async { editor.focus() }
+    }
+
+    /// Dopo un "Salva con nome" il file acquisisce finalmente un percorso:
+    /// registriamolo appena AppKit lo aggiorna per poterlo ripristinare.
+    override var fileURL: URL? {
+        didSet { Workspace.shared.rememberDocument(fileURL) }
     }
 
     // MARK: - Lettura e scrittura

@@ -14,16 +14,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        startPage.show()
         NSApp.activate(ignoringOtherApps: true)
+
+        // La cartella di lavoro viene già ripristinata da `Workspace` quando
+        // nasce il singleton. Riapriamo quindi il file usato per ultimo; i
+        // Preferiti restano una destinazione esplicita, e il ripiego quando
+        // non esiste ancora un documento da ripristinare.
+        guard let lastDocument = Workspace.shared.lastDocumentURL else {
+            startPage.show()
+            return
+        }
+        guard FileManager.default.fileExists(atPath: lastDocument.path) else {
+            Workspace.shared.forgetLastDocument()
+            startPage.show()
+            return
+        }
+
+        NSDocumentController.shared.openDocument(withContentsOf: lastDocument, display: true) {
+            [weak self] _, _, error in
+            if error != nil { self?.startPage.show() }
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool { true }
 
-    /// All'avvio la pagina iniziale sostituisce il documento vuoto: l'utente
-    /// sceglie prima il contesto in cui vuole lavorare.
+    /// Senza un documento da ripristinare mostriamo i Preferiti, senza creare
+    /// nel frattempo un documento vuoto.
     func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool { false }
 
     /// Sceglie la cartella di lavoro, cioè quella che il pulsante in barra del
@@ -103,7 +121,7 @@ enum MainMenu {
 
     private static func fileMenu() -> NSMenuItem {
         submenu(localized("File")) { menu in
-            add(menu, localized("Start Page"), #selector(AppDelegate.showStartPage(_:)))
+            add(menu, localized("Start Page"), #selector(AppDelegate.showStartPage(_:)), "p", [.command, .shift])
             add(menu, localized("Add Favorite…"), #selector(AppDelegate.addFavoriteFolder(_:)))
             menu.addItem(.separator())
             add(menu, localized("New"), #selector(NSDocumentController.newDocument(_:)), "n")

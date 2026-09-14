@@ -11,6 +11,7 @@ final class Workspace {
 
     private static let defaultsKey = "AuroraWorkspaceFolder"
     private static let favoritesKey = "AuroraFavoriteFolders"
+    private static let lastDocumentKey = "AuroraLastDocument"
 
     /// Estensioni elencate. Le altre restano invisibili: l'elenco serve a
     /// scrivere, non a esplorare il disco.
@@ -34,6 +35,26 @@ final class Workspace {
 
     func open(_ url: URL) {
         folder = url.standardizedFileURL
+    }
+
+    // MARK: - Ripristino dell'ultimo documento
+
+    /// L'ultimo file con cui si è lavorato. I documenti senza nome non hanno
+    /// ancora un percorso stabile e non vengono quindi memorizzati.
+    var lastDocumentURL: URL? {
+        guard let path = UserDefaults.standard.string(forKey: Self.lastDocumentKey) else {
+            return nil
+        }
+        return URL(fileURLWithPath: path).standardizedFileURL
+    }
+
+    func rememberDocument(_ url: URL?) {
+        guard let url else { return }
+        UserDefaults.standard.set(url.standardizedFileURL.path, forKey: Self.lastDocumentKey)
+    }
+
+    func forgetLastDocument() {
+        UserDefaults.standard.removeObject(forKey: Self.lastDocumentKey)
     }
 
     // MARK: - Cartelle preferite

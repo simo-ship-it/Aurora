@@ -868,7 +868,7 @@ private final class FolderTileButton: NSButton {
         isTileSelected = selected
         updateBackground()
         if remove != nil {
-            toolTip = localized("Click to select this folder. Right-click to remove it.")
+            toolTip = localized("Open Folder")
         } else {
             toolTip = title
         }
@@ -924,19 +924,22 @@ private final class FolderTileButton: NSButton {
     @objc private func open(_ sender: Any?) { onOpen?() }
 
     override func mouseDown(with event: NSEvent) {
-        if event.modifierFlags.contains(.command), let onOpenFolder {
-            onOpenFolder()
+        // Nei Preferiti il gesto principale apre subito la cartella di lavoro.
+        // ⌘-clic conserva la navigazione interna alla libreria per chi vuole
+        // soltanto esplorarne il contenuto senza aprire un nuovo documento.
+        if event.modifierFlags.contains(.command) {
+            onOpen?()
             return
         }
         if event.modifierFlags.contains(.shift), let onToggleSelection {
             onToggleSelection()
             return
         }
-        guard let window else { onOpen?(); return }
+        guard let window else { openPrimaryAction(); return }
         let origin = event.locationInWindow
         while let next = window.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {
             if next.type == .leftMouseUp {
-                onOpen?()
+                openPrimaryAction()
                 return
             }
             let dx = next.locationInWindow.x - origin.x
@@ -945,6 +948,14 @@ private final class FolderTileButton: NSButton {
                 beginDrag(with: next)
                 return
             }
+        }
+    }
+
+    private func openPrimaryAction() {
+        if let onOpenFolder {
+            onOpenFolder()
+        } else {
+            onOpen?()
         }
     }
 
