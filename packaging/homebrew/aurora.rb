@@ -8,8 +8,8 @@
 class Aurora < Formula
   desc "Markdown editor that renders as you type"
   homepage "https://github.com/simo-ship-it/Aurora"
-  url "https://github.com/simo-ship-it/Aurora/archive/refs/tags/v0.1.0.tar.gz"
-  sha256 "8a3943e70d904ecbf6965acc1798448857051658f09d4df746a46ff6655bf9cd"
+  url "https://github.com/simo-ship-it/Aurora/archive/refs/tags/v0.2.0.tar.gz"
+  sha256 "d17907db66faddacfeff5dcee39415dbbe5d749837892b456840d4cd6df9ecbb"
   license "MIT"
   head "https://github.com/simo-ship-it/Aurora.git", branch: "main"
 
