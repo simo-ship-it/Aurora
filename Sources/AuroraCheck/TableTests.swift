@@ -47,7 +47,13 @@ func runTableTests() {
                      "la tabella conserva almeno una colonna")
 
         let safe = MarkdownTable(headers: ["a|b"], rows: [["una\ndue"]])
-        Check.equal(safe.markdown, "| a¦b |\n| --- |\n| una due |",
-                    "una cella non può spezzare la struttura della tabella")
+        Check.equal(safe.markdown, "| a\\|b |\n| --- |\n| una due |",
+                    "una barra nella cella viene conservata con l'escape GFM")
+
+        let formatted = MarkdownTable(headers: ["**Nome**"],
+                                      rows: [["*Aurora* e `Markdown`"]])
+        Check.equal(formatted.markdown,
+                    "| **Nome** |\n| --- |\n| *Aurora* e `Markdown` |",
+                    "la formattazione inline nelle celle resta Markdown valido")
     }
 }

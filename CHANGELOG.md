@@ -6,6 +6,36 @@ All notable changes to Aurora are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-11-07
+
+### Added
+
+- **Two documents side by side**, with a draggable divider, independent saving
+  and undo, and controls to separate the documents into their own windows.
+- **Interactive tables** with editable cells and contextual row and column
+  controls. The source remains an ordinary Markdown table.
+- **Image previews**, including relative paths, and commands to insert images
+  and numbered lists.
+- Underline, Setext headings, indented code blocks, reference links and bare URLs.
+- **Working folder actions** to create folders, rename, move, copy, duplicate
+  and delete items, with undo and automatic refresh after external changes.
+- Title bar shortcuts to open the working folder in Finder, Claude Cowork or
+  ChatGPT.
+- **Option-drag column guides** and commands to adjust text size while writing.
+- AppKit regression checks for document windows, split view, saving, undo,
+  relative images and cancellation of a close with unsaved changes.
+- Updated English and Italian README screenshots in light mode, dark mode and
+  split view, with a script to capture the real app windows.
+
+### Changed
+
+- Markdown markers stay hidden while editing, including on the active line.
+- The editor restores the last document at launch; the working folder remains
+  accessible from the title bar instead of a separate start page.
+- Improved Markdown parsing, formatting commands, table layout and file change
+  handling.
+- Refreshed translations across all eight supported languages.
+
 ## [0.1.0] — first release
 
 The editor itself already worked; this release is what turns it into something

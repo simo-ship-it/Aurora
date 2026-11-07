@@ -5,8 +5,8 @@
 
 A native Markdown editor for macOS, written in Swift and AppKit. Like Typora, it
 shows text already formatted **as you write it**: there is no separate preview
-pane, just one writing surface where Markdown markers hide when the cursor
-leaves the line and come back the moment you return to it.
+pane, just one writing surface where Markdown markers always stay hidden.
+Keyboard shortcuts apply and remove formatting without exposing the syntax.
 
 The file on disk stays plain Markdown: no proprietary format, no conversion.
 
@@ -14,16 +14,38 @@ The file on disk stays plain Markdown: no proprietary format, no conversion.
 
 <p align="center">
   <img src="docs/screenshot.png" width="820"
-       alt="Aurora showing a Markdown document: every marker is hidden except on the line holding the cursor, where the two asterisks around a bold phrase are visible in grey.">
+       alt="Aurora showing a Markdown document as already formatted text.">
 </p>
 
-<p align="center"><em>The cursor sits on the third line — and only there do the
-<code>**</code> around the bold phrase appear.</em></p>
+<p align="center"><em>The document remains plain Markdown on disk, while the
+editor only shows the formatted result.</em></p>
+
+<p align="center">
+  <img src="docs/screenshot-dark.png" width="820"
+       alt="Aurora in dark mode, with headings, task lists and an editable table.">
+</p>
+
+<p align="center"><em>The same writing surface in dark mode.</em></p>
+
+<p align="center">
+  <img src="docs/screenshot-split.png" width="1000"
+       alt="Two Markdown documents side by side in Aurora, each with its own editor and document controls.">
+</p>
+
+<p align="center"><em>Keep a draft and research notes side by side, with
+independent scrolling, saving and undo.</em></p>
 
 ## Install
 
 ```bash
 brew install simo-ship-it/aurora/aurora
+```
+
+To update an existing installation:
+
+```bash
+brew update
+brew upgrade simo-ship-it/aurora/aurora
 ```
 
 That is a formula, not a cask: it fetches the source and builds Aurora on your
@@ -65,17 +87,19 @@ bundle.
 
 | Element | Rendering |
 | --- | --- |
-| Headings `#` … `######` | Six levels, each with its own size |
+| Headings `#` … `######`, Setext `===` / `---` | Six levels, each with its own size |
 | `**bold**`, `*italic*`, `***both***` | Real font, markers hidden |
+| `<u>underline</u>` | Underlined text, tags hidden |
 | `~~strikethrough~~`, `==highlight==` | Struck through, yellow background |
 | `` `inline code` `` | Monospaced with a background |
-| ` ``` ` and `~~~` blocks | Grey surface, delimiter lines hidden |
+| Fenced and four-space code blocks | Grey surface, fence lines hidden |
 | Blockquotes `>` (nested too) | Side bar and indent per level |
 | Lists `-`, `*`, `+`, `1.`, `1)` | Drawn bullets, automatic indents |
 | Task lists `- [ ]` / `- [x]` | Clickable box, completed item struck through |
-| `[text](url)` and `<url>` | Coloured link, ⌘-click to open |
+| Inline, reference and bare links | Coloured link, click to open in the browser |
+| Images `![alt](path)` | Local or remote preview, Markdown source preserved |
 | `---`, `***`, `___` | Drawn horizontal rule |
-| Tables `\| a \| b \|` | Aligned columns, bold header, `:---:` alignments |
+| Tables `\| a \| b \|` | Editable cells, bold header, alignment and row/column controls |
 
 ## Writing
 
@@ -83,13 +107,16 @@ bundle.
   line; on an empty item it leaves the list.
 - **Tab** and **⇧Tab** both increase the indent of list items. To decrease it
   you remove the spaces by hand: that is a choice, not an oversight.
-- **⌘B**, **⌘I**, **⇧⌘X**, **⇧⌘H** apply and remove bold, italic,
-  strikethrough and highlight.
+- **⌘B**, **⌘I**, **⌘U**, **⇧⌘X**, **⇧⌘H** apply and remove bold, italic,
+  underline, strikethrough and highlight.
 - **⌘1 … ⌘6** set the heading level, **⌘0** returns to paragraph.
+- **⌘+** promotes the current paragraph through H6 … H1; **⌘−** moves back
+  through H1 … H6 to a normal paragraph.
 - **⇧⌘U** bulleted list, **⇧⌘T** task list, **⌥⌘K** code block, **⌘K** link.
+  Numbered lists and images are available from the **Format** menu.
 - **/** opens the command menu (see below).
 - **⌘F** searches the document, using the system find bar.
-- Clicking a `[ ]` box ticks it; **⌘-click** on a link opens it.
+- Clicking a `[ ]` box ticks it; clicking a link opens it in the default browser.
 
 Inline code, blockquote and horizontal rule are reached from the **Format**
 menu: their shortcuts (⌘`, ⇧⌘', ⇧⌘-) are declared on punctuation keys that sit
@@ -102,8 +129,8 @@ macOS ones.
 
 Typing **/** at the start of a line, or after a space, opens a list of every
 formatting command: headings, lists, blockquote, code block, horizontal rule,
-link, bold, italic, strikethrough, highlight, inline code. Typing on filters the
-list, **↑ ↓** move through it, **Return** or a click applies, **Esc** dismisses.
+link, image, bold, italic, strikethrough, highlight, inline code. Typing on
+filters the list, **↑ ↓** move through it, **Return** or a click applies, **Esc** dismisses.
 Whatever you typed after the slash disappears along with the menu.
 
 Filtering matches the name but also the syntax: `/###` finds Heading 3 and
@@ -120,6 +147,11 @@ command menu is a way to reach them by typing, not a second implementation.
 The folder button in the title bar opens the tree of the folder you are working
 in: subfolders expand in place, files open with one click. To pick another one,
 **⌘⇧O** or a click on the folder name at the top of the panel.
+The adjacent buttons open that folder in Finder, Claude Cowork, or ChatGPT.
+
+The actions menu and a right click on an item let you create folders, rename,
+move, copy, duplicate and delete files or folders. Changes made outside Aurora
+refresh the tree automatically. Aurora also reopens your last document at launch.
 
 A folder's children are read from disk only when it is expanded, so a deep tree
 costs nothing while it stays closed. The chosen folder and which ones are open
@@ -130,6 +162,19 @@ It lists only `.md`, `.markdown`, `.mdown`, `.mkd`, `.mdtext` and `.txt`: it is
 there to write, not to browse the disk. The first time you point it inside
 Documents, Desktop or Downloads, macOS asks for permission to read them.
 
+## Two documents side by side
+
+Use **File → Open Side by Side…** (`⌘\`) or the split button in the title
+bar to choose a second document. You can also choose a file that is already open:
+its editor moves into the split with its unsaved changes and undo history intact.
+
+Drag the divider to adjust the widths. Each document scrolls and edits
+independently; **⌘S** saves the document you are working in. **Control-Tab** moves
+the focus to the other document. The headers show each file's name and unsaved
+changes. Their close buttons close just that document after reviewing changes.
+**View → Separate Documents**, or the separate-window button in a header, returns
+to two windows. Closing the whole split reviews both documents before closing.
+
 ## Settings
 
 **⌘,** opens Settings: typeface, text size, line spacing, column width, and
@@ -137,6 +182,14 @@ whether the app follows the system appearance or stays light or dark. The
 sliders show the value while you drag them but only commit when you let go —
 every change restyles every open document, and doing that on each notch of the
 slider would make the drag stutter on long files.
+
+The editor always uses a centered reading column. Hold **⌥ Option** to reveal
+its two side guides, then drag either one to resize both sides symmetrically.
+The chosen width is saved automatically and is still available in Settings.
+
+For a quick adjustment while writing, choose **View → Increase Text Size**
+(**⇧⌘+**) or **Decrease Text Size** (**⇧⌘−**). The menu command restores the
+default size.
 
 The default typeface is the system one, which is not just one family among the
 others: it follows optical sizing and the accessibility settings. Code stays
@@ -173,7 +226,13 @@ Sources/Aurora/
   MarkdownTextView.swift   NSTextView: hidden glyphs, decorations, editing commands
   MarkdownStyler.swift     from the analysis to the text attributes
   SlashMenu.swift          the command menu that opens with "/"
-  TableLayout.swift        cells, columns and alignments of tables
+  InlineTableView.swift    editable table cells and row/column controls
+  TableLayout.swift        table measurements and alignments
+  DocumentWindowController.swift  single and side-by-side document windows
+  ColumnWidthOverlayView.swift  draggable reading-column guides
+  FileChangeObserver.swift  external document and folder changes
+  WorkspaceFileOperations.swift  file management and undo
+  ChatGPTLauncher.swift    open the working folder in ChatGPT
   Workspace.swift          working folder and tree state, on UserDefaults
   WorkspaceBrowser.swift   title bar button and file tree
   Theme.swift              fonts, light/dark colours, metrics
@@ -190,11 +249,11 @@ The delicate part is hiding the syntax without touching the text. Aurora uses
 the TextKit 1 stack and, through the layout manager delegate, treats characters
 carrying an internal attribute as zero-width controls: the markers stay in the
 document and in their own line but take up no space. When the selection enters
-a line, the attribute is removed and the markers reappear in grey.
+a line, the rendering does not change: the markers remain invisible.
 
 To stay fluid on large files, styling is not recomputed everywhere on every
-keystroke: it updates the lines that changed, those entering or leaving the
-selection, and those appearing as you scroll. The only case that needs more is
+keystroke: it updates the lines that changed and those appearing as you scroll.
+The only case that needs more is
 opening or closing a code fence, which changes the look of everything that
 follows: the styler notices by comparing the fence state before and after the
 edit.
@@ -205,45 +264,52 @@ has zero width and therefore provides no useful geometric anchor. Instead the
 visible line fragments are enumerated and matched with character ranges, keeping
 every decoration attached to its own line.
 
-Tables are the only place where drawing interferes with text spacing. TextKit
-can lay out real tables, but it wants one cell per paragraph, whereas here a
-whole row is a single paragraph. Columns are obtained instead by measuring the
-cells and widening, with kerning, the character preceding each one, so that it
-falls into place; the vertical bars stay in the text but become transparent, and
-reappear in grey when the cursor is on the line. The row of dashes hides like any
-other marker and the header rule is drawn in its place. The file on disk does not
-change by a single byte.
+Tables use native editable cells over their hidden Markdown source. Editing a
+cell or adding and removing rows and columns updates the underlying Markdown
+table and participates in the document's undo history. The file on disk stays
+plain Markdown.
 
 Then there is a rule that keeps the text still while you write: **a line's
-vertical geometry does not depend on the cursor, and no kind of line adds space
-above or below itself**. Separation comes from blank lines — which in Markdown
-are also how separation is written in the file. Without this constraint the text
-runs out from under your fingers: the space would appear the instant the line
-changes nature, that is, while you are still writing inside it. This is why
-`paragraphStyle` is not given the selection state: the constraint is enforced by
-the compiler, not by the memory of whoever touches the file. All that remains is
-the extra body height of a heading, two points.
+vertical geometry does not depend on the cursor, and text-only lines add no
+space above or below themselves**. Separation comes from blank lines — which in
+Markdown are also how separation is written in the file. Image previews are the
+deliberate exception: they reserve their rendered height below the source line.
+`paragraphStyle` is not given the selection state, so this geometry never changes
+just because the cursor enters or leaves a line.
 
 ## Tests
 
 ```bash
 swift run AuroraCheck
+python3 Scripts/check_app.py
 ```
 
 The tests are an executable rather than a test target because XCTest and
 swift-testing ship with Xcode, while building Aurora needs only the Command Line
 Tools: tying the tests to Xcode would mean they do not run on the machine where
 the app is developed. They cover the parser — headings, lists, task boxes,
-blockquotes, fences, tables, document edges — and the index arithmetic behind the
-editing commands.
+blockquotes, code blocks, tables, links and images, document edges — and the index
+arithmetic behind the editing commands.
+
+`check_app.py` also checks the AppKit document windows and split view, including
+saving, independent undo, relative images, moving documents between windows, and
+canceling a close with unsaved changes. Run it in a logged-in macOS desktop
+session. It uses a separate app identifier, preferences and fixture files under
+`.build/AppChecks`.
+
+To refresh the README screenshots from the real AppKit views:
+
+```bash
+python3 Scripts/capture_screenshots.py
+```
+
+This captures English and Italian windows in light mode, dark mode and split
+view, using a separate app identifier, preferences and sample documents.
 
 ## Current limits
 
-- Images `![](…)` are shown as links, not embedded.
-- Code blocks indented by four spaces are not recognised as such (the fence
-  delimiters are required), so as not to disturb nested lists.
 - No syntax highlighting inside code blocks.
-- Setext headings (underlined with `===`) are not recognised.
+- Raw HTML, footnotes, mathematical notation and diagrams are left as text.
 - Opening a ` ``` ` fence without closing it turns the rest of the document into
   code, as Markdown intends: the text below reflows until you close it.
 
@@ -251,8 +317,6 @@ editing commands.
 
 - **⌘` , ⇧⌘' and ⇧⌘- do not respond** on non-US keyboards. The commands work
   from the Format menu.
-- Tables have no separating lines between cells, only the rule under the header:
-  the columns are read from the alignment.
 
 ## Contributing
 

@@ -7,6 +7,7 @@ final class WorkspaceButtonController: NSTitlebarAccessoryViewController {
     private let button = NSButton()
     private let finderButton = NSButton()
     private let claudeButton = NSButton()
+    private let chatGPTButton = NSButton()
     private let popover = NSPopover()
 
     init() {
@@ -33,8 +34,11 @@ final class WorkspaceButtonController: NSTitlebarAccessoryViewController {
         configure(claudeButton, symbol: "sparkles",
                   label: localized("Open Working Folder in Claude Cowork"),
                   action: #selector(openInClaudeCowork(_:)))
+        configure(chatGPTButton, symbol: "bubble.left.and.bubble.right",
+                  label: localized("Open Working Folder in ChatGPT"),
+                  action: #selector(openInChatGPT(_:)))
 
-        let buttons = NSStackView(views: [button, finderButton, claudeButton])
+        let buttons = NSStackView(views: [button, finderButton, claudeButton, chatGPTButton])
         buttons.orientation = .horizontal
         buttons.alignment = .centerY
         buttons.spacing = 2
@@ -43,7 +47,7 @@ final class WorkspaceButtonController: NSTitlebarAccessoryViewController {
         // L'accessorio della barra del titolo viene dimensionato da AppKit a
         // partire dal frame: le costanti di larghezza sul contenitore verrebbero
         // annullate dalla maschera di ridimensionamento.
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 88, height: 28))
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 116, height: 28))
         container.addSubview(buttons)
         NSLayoutConstraint.activate([
             buttons.centerXAnchor.constraint(equalTo: container.centerXAnchor),
@@ -53,7 +57,9 @@ final class WorkspaceButtonController: NSTitlebarAccessoryViewController {
             finderButton.widthAnchor.constraint(equalToConstant: 26),
             finderButton.heightAnchor.constraint(equalToConstant: 22),
             claudeButton.widthAnchor.constraint(equalToConstant: 26),
-            claudeButton.heightAnchor.constraint(equalToConstant: 22)
+            claudeButton.heightAnchor.constraint(equalToConstant: 22),
+            chatGPTButton.widthAnchor.constraint(equalToConstant: 26),
+            chatGPTButton.heightAnchor.constraint(equalToConstant: 22)
         ])
         view = container
         updateAvailability()
@@ -101,6 +107,11 @@ final class WorkspaceButtonController: NSTitlebarAccessoryViewController {
         NSWorkspace.shared.open(url)
     }
 
+    @objc private func openInChatGPT(_ sender: Any?) {
+        guard let folder = Workspace.shared.folder else { NSSound.beep(); return }
+        ChatGPTLauncher.open(folder: folder)
+    }
+
     @objc private func workspaceChanged() {
         updateAvailability()
     }
@@ -112,6 +123,7 @@ final class WorkspaceButtonController: NSTitlebarAccessoryViewController {
         let cowork = URL(string: "claude://cowork/new")
         let hasClaude = cowork.flatMap { NSWorkspace.shared.urlForApplication(toOpen: $0) } != nil
         claudeButton.isEnabled = hasFolder && hasClaude
+        chatGPTButton.isEnabled = hasFolder && ChatGPTLauncher.isAvailable
     }
 }
 
@@ -179,6 +191,7 @@ final class WorkspaceNode: NSObject {
 final class WorkspaceOutlineView: NSOutlineView {
 
     var onClickRow: ((Int) -> Void)?
+    var makeContextMenu: ((Int?) -> NSMenu?)?
 
     override func mouseDown(with event: NSEvent) {
         super.mouseDown(with: event)
@@ -187,6 +200,12 @@ final class WorkspaceOutlineView: NSOutlineView {
         guard index >= 0 else { return }
         if NSPointInRect(point, frameOfOutlineCell(atRow: index)) { return }
         onClickRow?(index)
+    }
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let point = convert(event.locationInWindow, from: nil)
+        let index = row(at: point)
+        return makeContextMenu?(index >= 0 ? index : nil) ?? super.menu(for: event)
     }
 }
 
@@ -200,6 +219,7 @@ final class WorkspaceBrowserViewController: NSViewController,
     private var roots: [WorkspaceNode] = []
     private var isRestoring = false
     private let header = NSButton()
+    private let actionsButton = NSButton()
     private let outline = WorkspaceOutlineView()
     private let placeholder = NSTextField(labelWithString: "")
     private var theme: Theme { Theme.current }
@@ -226,6 +246,18 @@ final class WorkspaceBrowserViewController: NSViewController,
         header.action = #selector(chooseFolder(_:))
         header.translatesAutoresizingMaskIntoConstraints = false
 
+        actionsButton.isBordered = false
+        actionsButton.bezelStyle = .regularSquare
+        actionsButton.image = NSImage(systemSymbolName: "ellipsis.circle",
+                                      accessibilityDescription: localized("File actions"))
+        actionsButton.imagePosition = .imageOnly
+        actionsButton.contentTintColor = theme.quoteText
+        actionsButton.toolTip = localized("File actions")
+        actionsButton.setAccessibilityLabel(localized("File actions"))
+        actionsButton.target = self
+        actionsButton.action = #selector(showActions(_:))
+        actionsButton.translatesAutoresizingMaskIntoConstraints = false
+
         let separator = NSBox()
         separator.boxType = .separator
         separator.translatesAutoresizingMaskIntoConstraints = false
@@ -247,6 +279,9 @@ final class WorkspaceBrowserViewController: NSViewController,
         outline.dataSource = self
         outline.delegate = self
         outline.onClickRow = { [weak self] row in self?.activateRow(row) }
+        outline.makeContextMenu = { [weak self] row in
+            self?.makeContextMenu(at: row)
+        }
 
         let scroll = NSScrollView()
         scroll.documentView = outline
@@ -260,14 +295,19 @@ final class WorkspaceBrowserViewController: NSViewController,
         placeholder.alignment = .center
         placeholder.translatesAutoresizingMaskIntoConstraints = false
 
-        for subview in [header, separator, scroll, placeholder] {
+        for subview in [header, actionsButton, separator, scroll, placeholder] {
             root.addSubview(subview)
         }
 
         NSLayoutConstraint.activate([
             header.topAnchor.constraint(equalTo: root.topAnchor, constant: 12),
             header.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 12),
-            header.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -12),
+            header.trailingAnchor.constraint(equalTo: actionsButton.leadingAnchor, constant: -4),
+
+            actionsButton.centerYAnchor.constraint(equalTo: header.centerYAnchor),
+            actionsButton.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -8),
+            actionsButton.widthAnchor.constraint(equalToConstant: 24),
+            actionsButton.heightAnchor.constraint(equalToConstant: 22),
 
             separator.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 10),
             separator.leadingAnchor.constraint(equalTo: root.leadingAnchor),
@@ -291,8 +331,13 @@ final class WorkspaceBrowserViewController: NSViewController,
     override func viewDidLoad() {
         super.viewDidLoad()
         preferredContentSize = Self.size
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(workspaceContentsChanged),
+            name: .auroraWorkspaceContentsChanged, object: nil)
         reload()
     }
+
+    deinit { NotificationCenter.default.removeObserver(self) }
 
     override func viewWillAppear() {
         super.viewWillAppear()
@@ -314,6 +359,10 @@ final class WorkspaceBrowserViewController: NSViewController,
         placeholder.isHidden = placeholder.stringValue.isEmpty
         outline.reloadData()
         restoreExpansion()
+    }
+
+    @objc private func workspaceContentsChanged() {
+        reload()
     }
 
     /// Riapre le cartelle che erano aperte, dai genitori ai figli: una cartella
@@ -353,6 +402,169 @@ final class WorkspaceBrowserViewController: NSViewController,
 
     @objc private func chooseFolder(_ sender: Any?) {
         (NSApp.delegate as? AppDelegate)?.openFolder(sender)
+    }
+
+    @objc private func showActions(_ sender: Any?) {
+        let row = outline.selectedRow
+        guard let menu = makeContextMenu(at: row >= 0 ? row : nil) else { return }
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: actionsButton.bounds.height),
+                   in: actionsButton)
+    }
+
+    private func makeContextMenu(at row: Int?) -> NSMenu? {
+        guard let workspaceFolder = Workspace.shared.folder else { return nil }
+        let node = row.flatMap { outline.item(atRow: $0) as? WorkspaceNode }
+        if let row {
+            outline.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+        }
+
+        let parent = node?.isFolder == true ? node!.url : node?.url.deletingLastPathComponent()
+            ?? workspaceFolder
+        let menu = NSMenu()
+        addMenuItem(localized("New Folder"), #selector(createFolder(_:)), parent,
+                    symbol: "folder.badge.plus", to: menu)
+        guard let node else { return menu }
+
+        menu.addItem(.separator())
+        addMenuItem(localized("Rename…"), #selector(renameItem(_:)), node.url,
+                    symbol: "pencil", to: menu)
+        addMenuItem(localized("Move To…"), #selector(moveItem(_:)), node.url,
+                    symbol: "folder", to: menu)
+        addMenuItem(localized("Copy"), #selector(copyItem(_:)), node.url,
+                    symbol: "doc.on.doc", to: menu)
+        addMenuItem(localized("Duplicate"), #selector(duplicateItem(_:)), node.url,
+                    symbol: "plus.square.on.square", to: menu)
+        menu.addItem(.separator())
+        addMenuItem(localized("Delete"), #selector(deleteItem(_:)), node.url,
+                    symbol: "trash", to: menu)
+        return menu
+    }
+
+    private func addMenuItem(_ title: String, _ action: Selector, _ object: URL,
+                             symbol: String, to menu: NSMenu) {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+        item.target = self
+        item.representedObject = object
+        item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)?
+            .withSymbolConfiguration(.init(pointSize: 13, weight: .regular))
+        menu.addItem(item)
+    }
+
+    @objc private func createFolder(_ sender: NSMenuItem) {
+        guard let parent = sender.representedObject as? URL else { return }
+        askForName(title: localized("New Folder"), defaultName: localized("New Folder"),
+                   confirmation: localized("Create")) { [weak self] name in
+            self?.performFileOperation {
+                try WorkspaceFileOperations.shared.createFolder(named: name, in: parent)
+            }
+        }
+    }
+
+    @objc private func renameItem(_ sender: NSMenuItem) {
+        guard let source = sender.representedObject as? URL else { return }
+        let isFolder = (try? source.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
+        askForName(title: localized("Rename…"), defaultName: source.lastPathComponent,
+                   confirmation: localized("Rename…")) { [weak self] proposedName in
+            var name = proposedName
+            if !isFolder, URL(fileURLWithPath: name).pathExtension.isEmpty,
+               !source.pathExtension.isEmpty {
+                name += "." + source.pathExtension
+            }
+            self?.performFileOperation {
+                try WorkspaceFileOperations.shared.rename(source, to: name, isFolder: isFolder)
+            }
+        }
+    }
+
+    @objc private func moveItem(_ sender: NSMenuItem) {
+        chooseDestination(for: sender, prompt: localized("Move To…")) { [weak self] source, destination in
+            self?.performFileOperation {
+                try WorkspaceFileOperations.shared.move([source], to: destination)
+            }
+        }
+    }
+
+    @objc private func copyItem(_ sender: NSMenuItem) {
+        chooseDestination(for: sender, prompt: localized("Copy")) { [weak self] source, destination in
+            self?.performFileOperation {
+                try WorkspaceFileOperations.shared.copy([source], to: destination)
+            }
+        }
+    }
+
+    @objc private func duplicateItem(_ sender: NSMenuItem) {
+        guard let source = sender.representedObject as? URL else { return }
+        performFileOperation {
+            try WorkspaceFileOperations.shared.duplicate([source])
+        }
+    }
+
+    @objc private func deleteItem(_ sender: NSMenuItem) {
+        guard let source = sender.representedObject as? URL else { return }
+        performFileOperation {
+            try WorkspaceFileOperations.shared.delete([source])
+        }
+    }
+
+    private func chooseDestination(for sender: NSMenuItem, prompt: String,
+                                   completion: @escaping (URL, URL) -> Void) {
+        guard let source = sender.representedObject as? URL, let window = view.window else { return }
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = prompt
+        panel.message = localized("Choose the destination folder.")
+        panel.directoryURL = source.deletingLastPathComponent()
+        panel.beginSheetModal(for: window) { response in
+            guard response == .OK, let destination = panel.url else { return }
+            completion(source, destination)
+        }
+    }
+
+    private func askForName(title: String, defaultName: String, confirmation: String,
+                            completion: @escaping (String) -> Void) {
+        guard let window = view.window else { return }
+        let field = NSTextField(string: defaultName)
+        field.frame = NSRect(x: 0, y: 0, width: 280, height: 24)
+
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = localized("Choose a name.")
+        alert.accessoryView = field
+        alert.window.initialFirstResponder = field
+        alert.addButton(withTitle: confirmation)
+        alert.addButton(withTitle: localized("Cancel"))
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard response == .alertFirstButtonReturn else { return }
+            let name = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty, !name.contains("/"), name != ".", name != ".." else {
+                NSSound.beep()
+                self?.askForName(title: title, defaultName: field.stringValue,
+                                 confirmation: confirmation, completion: completion)
+                return
+            }
+            completion(name)
+        }
+    }
+
+    private func performFileOperation(_ operation: () throws -> Void) {
+        do {
+            try operation()
+            reload()
+        } catch let error as WorkspaceFileOperationError {
+            showError(error.localizedDescription)
+        } catch {
+            NSApp.presentError(error)
+        }
+    }
+
+    private func showError(_ message: String) {
+        guard let window = view.window else { NSSound.beep(); return }
+        let alert = NSAlert()
+        alert.messageText = message
+        alert.addButton(withTitle: localized("OK"))
+        alert.beginSheetModal(for: window)
     }
 
     // MARK: - Albero

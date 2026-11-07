@@ -20,6 +20,10 @@ func runBlockTests() {
         // Senza spazio non è un titolo: è la regola che salva gli hashtag.
         Check.equal(kinds("#nonUnTitolo").first, .paragraph, "'#parola' resta un paragrafo")
         Check.equal(kinds("####### sette").first, .paragraph, "sette cancelletti non sono un titolo")
+        Check.equal(kinds("Titolo\n======"), [.heading(level: 1), .setextUnderline],
+                    "la sottolineatura con uguali apre un titolo Setext H1")
+        Check.equal(kinds("Titolo\n------"), [.heading(level: 2), .setextUnderline],
+                    "la sottolineatura con trattini apre un titolo Setext H2")
     }
 
     Check.suite("elenchi") {
@@ -44,6 +48,10 @@ func runBlockTests() {
         Check.expect(lines("- [X] fatto")[0].checkboxChecked, "anche la X maiuscola spunta")
         Check.expect(lines("[x] senza elenco")[0].checkboxRange == nil,
                      "senza elenco non c'è casella")
+        Check.expect(lines("- [x]senza spazio")[0].checkboxRange == nil,
+                     "una task richiede spazio dopo la casella")
+        Check.expect(lines("- [\t] valida")[0].checkboxRange != nil,
+                     "anche una tabulazione rappresenta una casella vuota")
     }
 
     Check.suite("citazioni") {
@@ -52,6 +60,8 @@ func runBlockTests() {
         Check.equal(lines(">> due")[0].quoteDepth, 2, "'>>' sono due livelli anche senza spazio")
         Check.equal(lines("testo > non citazione")[0].quoteDepth, 0,
                     "un '>' a metà riga non cita")
+        Check.equal(lines("> prima\ncontinuazione")[1].quoteDepth, 1,
+                    "una continuazione lazy resta nella citazione")
     }
 
     Check.suite("linee orizzontali") {
@@ -76,6 +86,12 @@ func runBlockTests() {
         Check.equal(kinds("```\n~~~\nx\n```"), [.fence, .codeBody, .codeBody, .fence],
                     "la tilde non chiude un recinto di apici")
         Check.expect(lines("```\nx\n```")[1].isInsideFence, "la riga interna sa di essere in un recinto")
+        Check.equal(kinds("```\nx\n```testo\ndopo"), [.fence, .codeBody, .codeBody, .codeBody],
+                    "testo dopo gli apici impedisce di chiudere il recinto")
+        Check.equal(kinds("``` info`non-valida\ntesto").first, .paragraph,
+                    "l'info string di un recinto con apici non contiene apici")
+        Check.equal(kinds("    let valore = 1").first, .indentedCode,
+                    "quattro spazi aprono un blocco di codice rientrato")
     }
 
     Check.suite("tabelle") {
@@ -88,6 +104,23 @@ func runBlockTests() {
         Check.equal(kinds("| a | b |\n| :-- | --: |\n| 1 | 2 |"),
                     [.tableHeader, .tableDelimiter, .tableRow],
                     "il delimitatore accetta gli allineamenti")
+        Check.equal(kinds("a | b\n--- | --- | ---\n1 | 2"),
+                    [.paragraph, .paragraph, .paragraph],
+                    "intestazione e delimitatore devono avere lo stesso numero di colonne")
+        Check.equal(kinds("a \\| uno | b\n--- | ---\n1 | 2"),
+                    [.tableHeader, .tableDelimiter, .tableRow],
+                    "una barra escaped non divide una cella")
+    }
+
+    Check.suite("contenitori e riferimenti") {
+        Check.equal(kinds("- prima riga\ncontinuazione"), [.bulletItem, .listContinuation],
+                    "una continuazione lazy resta nello stesso elemento elenco")
+        let analysis = MarkdownParser.analyze("[sito]: https://example.com \"Titolo\"" as NSString)
+        Check.equal(analysis.lines.first?.kind, .linkDefinition,
+                    "una definizione di collegamento è riconosciuta come blocco")
+        Check.equal(analysis.references["sito"],
+                    LinkReference(destination: "https://example.com", title: "Titolo"),
+                    "la definizione conserva destinazione e titolo")
     }
 
     Check.suite("fine del documento") {

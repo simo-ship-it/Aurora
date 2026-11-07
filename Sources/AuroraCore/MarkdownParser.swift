@@ -11,10 +11,14 @@ public enum LineKind: Equatable {
     case blank
     case paragraph
     case heading(level: Int)
+    case setextUnderline
     case bulletItem
     case orderedItem
+    case listContinuation
     case fence           // la riga ``` di apertura o chiusura
     case codeBody
+    case indentedCode
+    case linkDefinition
     case horizontalRule
     case tableHeader
     case tableDelimiter
@@ -48,6 +52,7 @@ public struct InlineStyle: OptionSet {
     public static let link      = InlineStyle(rawValue: 1 << 4)
     public static let image     = InlineStyle(rawValue: 1 << 5)
     public static let highlight = InlineStyle(rawValue: 1 << 6)
+    public static let underline = InlineStyle(rawValue: 1 << 7)
 }
 
 public struct InlineRun {
@@ -59,6 +64,42 @@ public struct InlineRun {
 public struct InlineResult {
     public var runs: [InlineRun] = []
     public var markers: [NSRange] = []
+    /// Coppie di delimitatori che applicano uno stile. Servono all'editor per
+    /// togliere la formattazione anche quando il cursore è in mezzo al testo o
+    /// la selezione ne copre solo una parte.
+    public var formats: [InlineFormatting] = []
+    public var images: [InlineImage] = []
+}
+
+public struct InlineFormatting {
+    public var style: InlineStyle
+    public var openingRange: NSRange
+    public var closingRange: NSRange
+
+    public var contentRange: NSRange {
+        NSRange(location: NSMaxRange(openingRange),
+                length: max(0, closingRange.location - NSMaxRange(openingRange)))
+    }
+}
+
+public struct InlineImage {
+    public var range: NSRange
+    public var url: String
+}
+
+public struct LinkReference: Equatable {
+    public var destination: String
+    public var title: String?
+
+    public init(destination: String, title: String? = nil) {
+        self.destination = destination
+        self.title = title
+    }
+}
+
+public struct MarkdownAnalysis {
+    public var lines: [LineInfo]
+    public var references: [String: LinkReference]
 }
 
 // MARK: - Parser
@@ -96,8 +137,9 @@ public enum MarkdownParser {
 
     // MARK: Blocchi
 
-    /// Analizza l'intero documento riga per riga. È una singola passata lineare.
-    public static func parse(_ ns: NSString) -> [LineInfo] {
+    /// Analizza l'intero documento. La prima passata riconosce le righe; le
+    /// successive risolvono le strutture che dipendono dalle righe vicine.
+    public static func analyze(_ ns: NSString) -> MarkdownAnalysis {
         var lines: [LineInfo] = []
         var index = 0
         var fenceChar: unichar = 0
@@ -123,9 +165,14 @@ public enum MarkdownParser {
             lines.append(last)
         }
 
+        let references = detectLinkDefinitions(ns, &lines)
+        detectSetextHeadings(ns, &lines)
+        detectContainerContinuations(ns, &lines)
         detectTables(ns, &lines)
-        return lines
+        return MarkdownAnalysis(lines: lines, references: references)
     }
+
+    public static func parse(_ ns: NSString) -> [LineInfo] { analyze(ns).lines }
 
     private static func isLineBreak(_ c: unichar) -> Bool { c == 0x0A || c == 0x0D || c == 0x2028 || c == 0x2029 }
 
@@ -164,7 +211,9 @@ public enum MarkdownParser {
                 while probe + run < limit, ns.character(at: probe + run) == c { run += 1 }
                 if run >= 3 {
                     if inFence {
-                        if c == fenceChar && run >= fenceLength {
+                        var tail = probe + run
+                        while tail < limit, isBlank(ns.character(at: tail)) { tail += 1 }
+                        if c == fenceChar && run >= fenceLength && tail == limit {
                             inFence = false
                             line.kind = .fence
                             line.isInsideFence = true
@@ -173,15 +222,27 @@ public enum MarkdownParser {
                             return line
                         }
                     } else {
-                        inFence = true
-                        fenceChar = c
-                        fenceLength = run
-                        line.kind = .fence
-                        line.isInsideFence = true
-                        // Nasconde i backtick ma lascia visibile il nome del linguaggio.
-                        line.markers.append(NSRange(location: probe, length: run))
-                        line.contentRange = NSRange(location: probe + run, length: contentsEnd - probe - run)
-                        return line
+                        // L'info string di un recinto aperto con apici inversi
+                        // non può contenere altri apici inversi.
+                        var validOpening = true
+                        if c == backtick {
+                            var tail = probe + run
+                            while tail < limit {
+                                if ns.character(at: tail) == backtick { validOpening = false; break }
+                                tail += 1
+                            }
+                        }
+                        if validOpening {
+                            inFence = true
+                            fenceChar = c
+                            fenceLength = run
+                            line.kind = .fence
+                            line.isInsideFence = true
+                            // Nasconde i backtick ma lascia visibile il nome del linguaggio.
+                            line.markers.append(NSRange(location: probe, length: run))
+                            line.contentRange = NSRange(location: probe + run, length: contentsEnd - probe - run)
+                            return line
+                        }
                     }
                 }
             }
@@ -301,7 +362,10 @@ public enum MarkdownParser {
                    ns.character(at: contentStart + 2) == closeBracket {
                     let mark = ns.character(at: contentStart + 1)
                     let isChecked = (mark == 0x78 || mark == 0x58)   // x o X
-                    if mark == space || isChecked {
+                    let empty = isBlank(mark)
+                    let followedByWhitespace = contentStart + 3 >= limit
+                        || isBlank(ns.character(at: contentStart + 3))
+                    if (empty || isChecked) && followedByWhitespace {
                         line.checkboxRange = NSRange(location: contentStart, length: 3)
                         line.checkboxChecked = isChecked
                         // Il marcatore dell'elenco cede il posto alla casella.
@@ -326,6 +390,24 @@ public enum MarkdownParser {
             }
         }
 
+        // --- Blocco di codice rientrato. Gli elenchi hanno precedenza per
+        // conservare i livelli a due spazi usati dall'editor.
+        if indentColumns >= 4 {
+            var contentStart = p
+            var columns = 0
+            while contentStart < limit, columns < 4 {
+                let c = ns.character(at: contentStart)
+                if c == space { columns += 1; contentStart += 1 }
+                else if c == tab { columns = 4; contentStart += 1 }
+                else { break }
+            }
+            line.kind = .indentedCode
+            line.isInsideFence = true
+            line.markers.append(NSRange(location: p, length: contentStart - p))
+            line.contentRange = NSRange(location: contentStart, length: contentsEnd - contentStart)
+            return line
+        }
+
         line.kind = .paragraph
         line.contentRange = NSRange(location: afterIndent, length: max(0, contentsEnd - afterIndent))
         return line
@@ -346,16 +428,160 @@ public enum MarkdownParser {
         return count >= 3
     }
 
+    // MARK: Strutture che dipendono dalle righe vicine
+
+    private static func detectLinkDefinitions(_ ns: NSString,
+                                              _ lines: inout [LineInfo]) -> [String: LinkReference] {
+        var references: [String: LinkReference] = [:]
+        for index in lines.indices where lines[index].kind == .paragraph {
+            guard let definition = linkReferenceDefinition(ns, line: lines[index]) else { continue }
+            if references[definition.label] == nil {
+                references[definition.label] = LinkReference(destination: definition.destination,
+                                                             title: definition.title)
+            }
+            lines[index].kind = .linkDefinition
+        }
+        return references
+    }
+
+    private static func linkReferenceDefinition(_ ns: NSString, line: LineInfo)
+        -> (label: String, destination: String, title: String?)? {
+        let start = line.contentRange.location
+        let end = NSMaxRange(line.contentRange)
+        guard start + 3 < end, ns.character(at: start) == openBracket else { return nil }
+
+        var close = start + 1
+        while close < end {
+            if ns.character(at: close) == backslash { close += 2; continue }
+            if ns.character(at: close) == closeBracket { break }
+            close += 1
+        }
+        guard close < end, close + 1 < end, ns.character(at: close + 1) == colon else { return nil }
+
+        let rawLabel = ns.substring(with: NSRange(location: start + 1, length: close - start - 1))
+        let label = normalizedLabel(rawLabel)
+        guard !label.isEmpty else { return nil }
+
+        var cursor = close + 2
+        while cursor < end, isBlank(ns.character(at: cursor)) { cursor += 1 }
+        guard cursor < end else { return nil }
+
+        let destination: String
+        if ns.character(at: cursor) == lt {
+            let valueStart = cursor + 1
+            cursor = valueStart
+            while cursor < end, ns.character(at: cursor) != 0x3E,
+                  !isLineBreak(ns.character(at: cursor)) { cursor += 1 }
+            guard cursor < end, ns.character(at: cursor) == 0x3E else { return nil }
+            destination = ns.substring(with: NSRange(location: valueStart, length: cursor - valueStart))
+            cursor += 1
+        } else {
+            let valueStart = cursor
+            var depth = 0
+            while cursor < end {
+                let c = ns.character(at: cursor)
+                if c == backslash { cursor = min(end, cursor + 2); continue }
+                if isBlank(c) { break }
+                if c == openParen { depth += 1 }
+                if c == closeParen {
+                    if depth == 0 { break }
+                    depth -= 1
+                }
+                cursor += 1
+            }
+            guard cursor > valueStart, depth == 0 else { return nil }
+            destination = ns.substring(with: NSRange(location: valueStart, length: cursor - valueStart))
+        }
+
+        while cursor < end, isBlank(ns.character(at: cursor)) { cursor += 1 }
+        var title: String?
+        if cursor < end {
+            let opener = ns.character(at: cursor)
+            let closer: unichar
+            if opener == 0x22 || opener == 0x27 { closer = opener }
+            else if opener == openParen { closer = closeParen }
+            else { return nil }
+            cursor += 1
+            let titleStart = cursor
+            while cursor < end, ns.character(at: cursor) != closer {
+                if ns.character(at: cursor) == backslash { cursor += 2 } else { cursor += 1 }
+            }
+            guard cursor < end else { return nil }
+            title = ns.substring(with: NSRange(location: titleStart, length: cursor - titleStart))
+            cursor += 1
+            while cursor < end, isBlank(ns.character(at: cursor)) { cursor += 1 }
+        }
+        guard cursor == end else { return nil }
+        return (label, unescape(destination), title)
+    }
+
+    private static func detectSetextHeadings(_ ns: NSString, _ lines: inout [LineInfo]) {
+        guard lines.count > 1 else { return }
+        for index in 1..<lines.count {
+            guard lines[index - 1].kind == .paragraph,
+                  lines[index - 1].quoteDepth == lines[index].quoteDepth,
+                  let level = setextLevel(ns, line: lines[index]) else { continue }
+            lines[index - 1].kind = .heading(level: level)
+            lines[index].kind = .setextUnderline
+            let syntax = NSRange(location: lines[index].contentRange.location,
+                                 length: lines[index].contentsEnd - lines[index].contentRange.location)
+            if syntax.length > 0 { lines[index].markers = [syntax] }
+            lines[index].contentRange = NSRange(location: lines[index].contentsEnd, length: 0)
+        }
+    }
+
+    private static func setextLevel(_ ns: NSString, line: LineInfo) -> Int? {
+        guard line.kind == .paragraph || line.kind == .horizontalRule else { return nil }
+        let candidate = line.kind == .horizontalRule
+            ? (line.markers.last ?? line.contentRange)
+            : line.contentRange
+        var start = candidate.location
+        var end = NSMaxRange(candidate)
+        while start < end, isBlank(ns.character(at: start)) { start += 1 }
+        while end > start, isBlank(ns.character(at: end - 1)) { end -= 1 }
+        guard start < end else { return nil }
+        let marker = ns.character(at: start)
+        guard marker == equals || marker == dash else { return nil }
+        var cursor = start
+        while cursor < end, ns.character(at: cursor) == marker { cursor += 1 }
+        guard cursor == end else { return nil }
+        return marker == equals ? 1 : 2
+    }
+
+    private static func detectContainerContinuations(_ ns: NSString, _ lines: inout [LineInfo]) {
+        guard lines.count > 1 else { return }
+        for index in 1..<lines.count where lines[index].kind == .paragraph {
+            let previous = lines[index - 1]
+            guard previous.kind != .blank else { continue }
+
+            // CommonMark consente di omettere il marcatore `>` nelle righe di
+            // continuazione di un paragrafo citato.
+            if lines[index].quoteDepth == 0, previous.quoteDepth > 0,
+               previous.kind == .paragraph || previous.kind == .listContinuation
+                    || previous.kind == .bulletItem || previous.kind == .orderedItem {
+                lines[index].quoteDepth = previous.quoteDepth
+            }
+
+            if previous.kind == .bulletItem || previous.kind == .orderedItem
+                || previous.kind == .listContinuation {
+                lines[index].kind = .listContinuation
+                lines[index].listIndent = previous.listIndent
+            }
+        }
+        _ = ns
+    }
+
     /// Seconda passata: una riga di intestazione seguita da "| --- | --- |" apre una tabella.
     private static func detectTables(_ ns: NSString, _ lines: inout [LineInfo]) {
         var i = 0
         while i < lines.count {
-            guard !lines[i].isInsideFence, isDelimiterRow(ns, lines[i]), i > 0,
-                  containsPipe(ns, lines[i - 1]), lines[i - 1].kind == .paragraph else { i += 1; continue }
+            guard !lines[i].isInsideFence, let delimiterColumns = delimiterColumnCount(ns, lines[i]),
+                  i > 0, lines[i - 1].kind == .paragraph,
+                  tableCellCount(ns, lines[i - 1]) == delimiterColumns else { i += 1; continue }
             lines[i - 1].kind = .tableHeader
             lines[i].kind = .tableDelimiter
             var j = i + 1
-            while j < lines.count, lines[j].kind == .paragraph, containsPipe(ns, lines[j]) {
+            while j < lines.count, lines[j].kind == .paragraph, containsUnescapedPipe(ns, lines[j]) {
                 lines[j].kind = .tableRow
                 j += 1
             }
@@ -363,23 +589,43 @@ public enum MarkdownParser {
         }
     }
 
-    private static func containsPipe(_ ns: NSString, _ line: LineInfo) -> Bool {
+    private static func containsUnescapedPipe(_ ns: NSString, _ line: LineInfo) -> Bool {
         var i = line.contentRange.location
         let end = NSMaxRange(line.contentRange)
         while i < end {
-            if ns.character(at: i) == pipe { return true }
+            if ns.character(at: i) == backslash { i += 2; continue }
+            if i < end, ns.character(at: i) == pipe { return true }
             i += 1
         }
         return false
     }
 
+    private static func tableCellCount(_ ns: NSString, _ line: LineInfo) -> Int {
+        var start = line.contentRange.location
+        var end = NSMaxRange(line.contentRange)
+        while start < end, isBlank(ns.character(at: start)) { start += 1 }
+        while end > start, isBlank(ns.character(at: end - 1)) { end -= 1 }
+        guard start < end else { return 0 }
+        var pipes = 0
+        var cursor = start
+        while cursor < end {
+            if ns.character(at: cursor) == backslash { cursor += 2; continue }
+            if cursor < end, ns.character(at: cursor) == pipe { pipes += 1 }
+            cursor += 1
+        }
+        guard pipes > 0 else { return 0 }
+        let leading = ns.character(at: start) == pipe
+        let trailing = ns.character(at: end - 1) == pipe
+        return max(0, pipes + 1 - (leading ? 1 : 0) - (trailing ? 1 : 0))
+    }
+
     /// Riga di delimitazione: ogni cella dev'essere fatta di trattini, con
     /// eventuali due punti ai lati per l'allineamento. GFM ne chiede **uno per
     /// cella**, non tre in tutta la riga: `| - | - |` è una tabella valida.
-    private static func isDelimiterRow(_ ns: NSString, _ line: LineInfo) -> Bool {
+    private static func delimiterColumnCount(_ ns: NSString, _ line: LineInfo) -> Int? {
         let start = line.contentRange.location
         let end = NSMaxRange(line.contentRange)
-        guard end > start else { return false }
+        guard end > start else { return nil }
 
         /// `nil` se la cella è vuota (le barre esterne ne creano una per lato).
         func valida(_ from: Int, _ to: Int) -> Bool? {
@@ -400,7 +646,7 @@ public enum MarkdownParser {
             if ns.character(at: index) == pipe {
                 pipes += 1
                 if let ok = valida(cellStart, index) {
-                    guard ok else { return false }
+                    guard ok else { return nil }
                     celle += 1
                 }
                 cellStart = index + 1
@@ -408,23 +654,29 @@ public enum MarkdownParser {
             index += 1
         }
         if let ok = valida(cellStart, end) {
-            guard ok else { return false }
+            guard ok else { return nil }
             celle += 1
         }
-        return celle >= 1 && pipes >= 1
+        return celle >= 1 && pipes >= 1 ? celle : nil
     }
 
     // MARK: Inline
 
     public static func parseInline(_ ns: NSString, range: NSRange) -> InlineResult {
+        parseInline(ns, range: range, references: analyze(ns).references)
+    }
+
+    public static func parseInline(_ ns: NSString, range: NSRange,
+                                   references: [String: LinkReference]) -> InlineResult {
         var out = InlineResult()
         guard range.length > 0 else { return out }
-        parseInline(ns, range: range, style: [], url: nil, into: &out)
+        parseInline(ns, range: range, style: [], url: nil, references: references, into: &out)
         return out
     }
 
     private static func parseInline(_ ns: NSString, range: NSRange, style: InlineStyle,
-                                    url: String?, into out: inout InlineResult) {
+                                    url: String?, references: [String: LinkReference],
+                                    into out: inout InlineResult) {
         var i = range.location
         let end = NSMaxRange(range)
         var plainStart = i
@@ -440,7 +692,7 @@ public enum MarkdownParser {
             let c = ns.character(at: i)
 
             // Escape: \*
-            if c == backslash, i + 1 < end {
+            if c == backslash, i + 1 < end, isEscapablePunctuation(ns.character(at: i + 1)) {
                 emit(upTo: i)
                 out.markers.append(NSRange(location: i, length: 1))
                 i += 2
@@ -454,13 +706,41 @@ public enum MarkdownParser {
                 while i + run < end, ns.character(at: i + run) == backtick { run += 1 }
                 if let close = findLiteralRun(ns, char: backtick, count: run, from: i + run, end: end) {
                     emit(upTo: i)
-                    out.markers.append(NSRange(location: i, length: run))
+                    let opening = NSRange(location: i, length: run)
+                    let closing = NSRange(location: close, length: run)
+                    out.markers.append(opening)
                     let content = NSRange(location: i + run, length: close - i - run)
                     if content.length > 0 {
                         out.runs.append(InlineRun(range: content, style: style.union(.code), url: url))
                     }
-                    out.markers.append(NSRange(location: close, length: run))
+                    out.markers.append(closing)
+                    out.formats.append(InlineFormatting(style: .code,
+                                                        openingRange: opening,
+                                                        closingRange: closing))
                     i = close + run
+                    plainStart = i
+                    continue
+                }
+            }
+
+            // Markdown non ha una sintassi nativa per il sottolineato. Aurora
+            // conserva quindi il comune HTML inline: <u>testo</u>.
+            if c == lt, i + 3 <= end,
+               ns.substring(with: NSRange(location: i, length: 3)).lowercased() == "<u>" {
+                let search = NSRange(location: i + 3, length: end - i - 3)
+                let close = ns.range(of: "</u>", options: [.caseInsensitive], range: search)
+                if close.location != NSNotFound {
+                    emit(upTo: i)
+                    let opening = NSRange(location: i, length: 3)
+                    let content = NSRange(location: i + 3, length: close.location - i - 3)
+                    out.markers.append(opening)
+                    parseInline(ns, range: content, style: style.union(.underline), url: url,
+                                references: references, into: &out)
+                    out.markers.append(close)
+                    out.formats.append(InlineFormatting(style: .underline,
+                                                        openingRange: opening,
+                                                        closingRange: close))
+                    i = NSMaxRange(close)
                     plainStart = i
                     continue
                 }
@@ -468,10 +748,14 @@ public enum MarkdownParser {
 
             // Immagini: ![alt](url)
             if c == bang, i + 1 < end, ns.character(at: i + 1) == openBracket,
-               let link = matchLink(ns, from: i + 1, end: end) {
+               let link = matchAnyLink(ns, from: i + 1, end: end, references: references) {
                 emit(upTo: i)
                 out.markers.append(NSRange(location: i, length: 2))                 // "!["
-                parseInline(ns, range: link.text, style: style.union(.image), url: link.url, into: &out)
+                if link.text.length > 0 {
+                    out.images.append(InlineImage(range: link.text, url: link.url))
+                }
+                parseInline(ns, range: link.text, style: style.union(.image), url: link.url,
+                            references: references, into: &out)
                 out.markers.append(NSRange(location: NSMaxRange(link.text),
                                            length: link.end - NSMaxRange(link.text)))
                 i = link.end
@@ -480,10 +764,11 @@ public enum MarkdownParser {
             }
 
             // Collegamenti: [testo](url)
-            if c == openBracket, let link = matchLink(ns, from: i, end: end) {
+            if c == openBracket, let link = matchAnyLink(ns, from: i, end: end, references: references) {
                 emit(upTo: i)
                 out.markers.append(NSRange(location: i, length: 1))                 // "["
-                parseInline(ns, range: link.text, style: style.union(.link), url: link.url, into: &out)
+                parseInline(ns, range: link.text, style: style.union(.link), url: link.url,
+                            references: references, into: &out)
                 out.markers.append(NSRange(location: NSMaxRange(link.text),
                                            length: link.end - NSMaxRange(link.text)))
                 i = link.end
@@ -491,15 +776,24 @@ public enum MarkdownParser {
                 continue
             }
 
-            // Autolink: <https://…>
-            if c == lt, let close = findAutolinkEnd(ns, from: i, end: end) {
+            // Autolink CommonMark: <https://…> e <nome@example.com>.
+            if c == lt, let link = matchAngleAutolink(ns, from: i, end: end) {
                 emit(upTo: i)
-                let content = NSRange(location: i + 1, length: close - i - 1)
+                let content = NSRange(location: i + 1, length: link.close - i - 1)
                 out.markers.append(NSRange(location: i, length: 1))
                 out.runs.append(InlineRun(range: content, style: style.union(.link),
-                                          url: ns.substring(with: content)))
-                out.markers.append(NSRange(location: close, length: 1))
-                i = close + 1
+                                          url: link.url))
+                out.markers.append(NSRange(location: link.close, length: 1))
+                i = link.close + 1
+                plainStart = i
+                continue
+            }
+
+            // Estensione GFM: URL, www ed email senza parentesi angolari.
+            if let link = matchBareAutolink(ns, from: i, end: end) {
+                emit(upTo: i)
+                out.runs.append(InlineRun(range: link.range, style: style.union(.link), url: link.url))
+                i = NSMaxRange(link.range)
                 plainStart = i
                 continue
             }
@@ -510,10 +804,15 @@ public enum MarkdownParser {
                 if i + 1 < end, ns.character(at: i + 1) == c,
                    let close = findDelimiter(ns, char: c, count: 2, from: i + 2, end: end) {
                     emit(upTo: i)
-                    out.markers.append(NSRange(location: i, length: 2))
+                    let opening = NSRange(location: i, length: 2)
+                    let closing = NSRange(location: close, length: 2)
+                    out.markers.append(opening)
                     parseInline(ns, range: NSRange(location: i + 2, length: close - i - 2),
-                                style: style.union(added), url: url, into: &out)
-                    out.markers.append(NSRange(location: close, length: 2))
+                                style: style.union(added), url: url, references: references, into: &out)
+                    out.markers.append(closing)
+                    out.formats.append(InlineFormatting(style: added,
+                                                        openingRange: opening,
+                                                        closingRange: closing))
                     i = close + 2
                     plainStart = i
                     continue
@@ -524,7 +823,7 @@ public enum MarkdownParser {
             if c == star || c == underscore {
                 var run = 0
                 while i + run < end, ns.character(at: i + run) == c, run < 3 { run += 1 }
-                let opensWell = i + run < end && !isBlank(ns.character(at: i + run))
+                let opensWell = i + run < end && !isInlineWhitespace(ns.character(at: i + run))
                 // Gli underscore non spezzano snake_case.
                 let intraword = (c == underscore) && i > 0 && isWordChar(ns.character(at: i - 1))
                 if opensWell, !intraword,
@@ -534,10 +833,15 @@ public enum MarkdownParser {
                     else if run == 2 { added = .bold }
                     else { added = [.bold, .italic] }
                     emit(upTo: i)
-                    out.markers.append(NSRange(location: i, length: run))
+                    let opening = NSRange(location: i, length: run)
+                    let closing = NSRange(location: close, length: run)
+                    out.markers.append(opening)
                     parseInline(ns, range: NSRange(location: i + run, length: close - i - run),
-                                style: style.union(added), url: url, into: &out)
-                    out.markers.append(NSRange(location: close, length: run))
+                                style: style.union(added), url: url, references: references, into: &out)
+                    out.markers.append(closing)
+                    out.formats.append(InlineFormatting(style: added,
+                                                        openingRange: opening,
+                                                        closingRange: closing))
                     i = close + run
                     plainStart = i
                     continue
@@ -574,7 +878,7 @@ public enum MarkdownParser {
             if c == char {
                 var run = 0
                 while i + run < end, ns.character(at: i + run) == char { run += 1 }
-                if run >= count, i > from, !isBlank(ns.character(at: i - 1)) {
+                if run >= count, i > from, !isInlineWhitespace(ns.character(at: i - 1)) {
                     return i + run - count   // consuma i delimitatori più interni
                 }
                 i += run
@@ -591,7 +895,13 @@ public enum MarkdownParser {
         var end: Int        // indice subito dopo la parentesi tonda di chiusura
     }
 
-    private static func matchLink(_ ns: NSString, from: Int, end: Int) -> LinkMatch? {
+    private static func matchAnyLink(_ ns: NSString, from: Int, end: Int,
+                                     references: [String: LinkReference]) -> LinkMatch? {
+        matchInlineLink(ns, from: from, end: end)
+            ?? matchReferenceLink(ns, from: from, end: end, references: references)
+    }
+
+    private static func closingBracket(_ ns: NSString, from: Int, end: Int) -> Int? {
         guard from < end, ns.character(at: from) == openBracket else { return nil }
         var depth = 1
         var i = from + 1
@@ -605,42 +915,238 @@ public enum MarkdownParser {
             }
             i += 1
         }
-        guard i < end, depth == 0 else { return nil }
+        return i < end && depth == 0 ? i : nil
+    }
+
+    private static func matchInlineLink(_ ns: NSString, from: Int, end: Int) -> LinkMatch? {
+        guard let i = closingBracket(ns, from: from, end: end) else { return nil }
         let textRange = NSRange(location: from + 1, length: i - from - 1)
         var j = i + 1
         guard j < end, ns.character(at: j) == openParen else { return nil }
         j += 1
-        let urlStart = j
-        var parens = 1
-        while j < end {
-            let c = ns.character(at: j)
-            if c == backslash { j += 2; continue }
-            if c == openParen { parens += 1 }
-            else if c == closeParen {
-                parens -= 1
-                if parens == 0 { break }
+        while j < end, isInlineWhitespace(ns.character(at: j)) { j += 1 }
+
+        let destination: String
+        if j < end, ns.character(at: j) == lt {
+            let valueStart = j + 1
+            j = valueStart
+            while j < end {
+                let c = ns.character(at: j)
+                if c == backslash { j += 2; continue }
+                if c == 0x3E { break }
+                if c == lt || isLineBreak(c) { return nil }
+                j += 1
             }
+            guard j < end, ns.character(at: j) == 0x3E else { return nil }
+            destination = ns.substring(with: NSRange(location: valueStart, length: j - valueStart))
             j += 1
+        } else {
+            let valueStart = j
+            var depth = 0
+            while j < end {
+                let c = ns.character(at: j)
+                if c == backslash { j += 2; continue }
+                if isInlineWhitespace(c) { break }
+                if c == openParen { depth += 1; j += 1; continue }
+                if c == closeParen {
+                    if depth == 0 { break }
+                    depth -= 1
+                }
+                j += 1
+            }
+            guard depth == 0 else { return nil }
+            destination = ns.substring(with: NSRange(location: valueStart, length: j - valueStart))
         }
-        guard j < end, parens == 0 else { return nil }
-        var destination = ns.substring(with: NSRange(location: urlStart, length: j - urlStart))
-        // Rimuove un eventuale titolo: (url "titolo")
-        if let spaceIdx = destination.firstIndex(where: { $0 == " " || $0 == "\t" }) {
-            destination = String(destination[destination.startIndex..<spaceIdx])
+
+        while j < end, isInlineWhitespace(ns.character(at: j)) { j += 1 }
+        if j < end, ns.character(at: j) != closeParen {
+            let opener = ns.character(at: j)
+            let closer: unichar
+            if opener == 0x22 || opener == 0x27 { closer = opener }
+            else if opener == openParen { closer = closeParen }
+            else { return nil }
+            j += 1
+            while j < end, ns.character(at: j) != closer {
+                if ns.character(at: j) == backslash { j += 2 } else { j += 1 }
+            }
+            guard j < end else { return nil }
+            j += 1
+            while j < end, isInlineWhitespace(ns.character(at: j)) { j += 1 }
         }
-        return LinkMatch(text: textRange, url: destination, end: j + 1)
+        guard j < end, ns.character(at: j) == closeParen else { return nil }
+        return LinkMatch(text: textRange, url: unescape(destination), end: j + 1)
     }
 
-    private static func findAutolinkEnd(_ ns: NSString, from: Int, end: Int) -> Int? {
-        var i = from + 1
-        var sawScheme = false
-        while i < end {
-            let c = ns.character(at: i)
-            if isBlank(c) || c == lt { return nil }
-            if c == colon { sawScheme = true }
-            if c == 0x3E { return sawScheme && i > from + 1 ? i : nil }
-            i += 1
+    private static func matchReferenceLink(_ ns: NSString, from: Int, end: Int,
+                                           references: [String: LinkReference]) -> LinkMatch? {
+        guard !references.isEmpty,
+              let textEnd = closingBracket(ns, from: from, end: end) else { return nil }
+        let text = NSRange(location: from + 1, length: textEnd - from - 1)
+        let textLabel = ns.substring(with: text)
+        var syntaxEnd = textEnd + 1
+        var label = textLabel
+
+        if syntaxEnd < end, ns.character(at: syntaxEnd) == openBracket {
+            let labelStart = syntaxEnd + 1
+            var labelEnd = labelStart
+            while labelEnd < end, ns.character(at: labelEnd) != closeBracket {
+                if ns.character(at: labelEnd) == backslash { labelEnd += 2 }
+                else if ns.character(at: labelEnd) == openBracket { return nil }
+                else { labelEnd += 1 }
+            }
+            guard labelEnd < end else { return nil }
+            label = labelEnd == labelStart
+                ? textLabel
+                : ns.substring(with: NSRange(location: labelStart, length: labelEnd - labelStart))
+            syntaxEnd = labelEnd + 1
         }
-        return nil
+
+        guard let reference = references[normalizedLabel(label)] else { return nil }
+        return LinkMatch(text: text, url: reference.destination, end: syntaxEnd)
+    }
+
+    private struct AngleAutolink {
+        var close: Int
+        var url: String
+    }
+
+    private static func matchAngleAutolink(_ ns: NSString, from: Int, end: Int) -> AngleAutolink? {
+        var close = from + 1
+        while close < end {
+            let c = ns.character(at: close)
+            if c == 0x3E { break }
+            if c == lt || isInlineWhitespace(c) || c < 0x20 { return nil }
+            close += 1
+        }
+        guard close < end, close > from + 1 else { return nil }
+        let raw = ns.substring(with: NSRange(location: from + 1, length: close - from - 1))
+        if isValidEmail(raw) { return AngleAutolink(close: close, url: "mailto:" + raw) }
+        guard let colon = raw.firstIndex(of: ":") else { return nil }
+        let scheme = String(raw[..<colon])
+        guard isValidScheme(scheme) else { return nil }
+        return AngleAutolink(close: close, url: raw)
+    }
+
+    private struct BareAutolink {
+        var range: NSRange
+        var url: String
+    }
+
+    private static func matchBareAutolink(_ ns: NSString, from: Int, end: Int) -> BareAutolink? {
+        guard from < end, bareAutolinkCanStart(ns, at: from) else { return nil }
+        let remaining = NSRange(location: from, length: end - from)
+        let prefixes = [("https://", ""), ("http://", ""), ("www.", "http://")]
+        for (prefix, addedScheme) in prefixes {
+            let prefixRange = ns.range(of: prefix, options: [], range: remaining)
+            guard prefixRange.location == from else { continue }
+            var limit = from + prefix.utf16.count
+            while limit < end {
+                let c = ns.character(at: limit)
+                if isInlineWhitespace(c) || c == lt { break }
+                limit += 1
+            }
+            limit = trimAutolinkEnd(ns, from: from, end: limit)
+            guard limit > from + prefix.utf16.count else { return nil }
+            let value = ns.substring(with: NSRange(location: from, length: limit - from))
+            let candidate = addedScheme + value
+            guard let url = URL(string: candidate), url.host?.contains(".") == true else { return nil }
+            return BareAutolink(range: NSRange(location: from, length: limit - from), url: candidate)
+        }
+
+        let first = ns.character(at: from)
+        guard isEmailLocalCharacter(first) else { return nil }
+        var limit = from
+        while limit < end {
+            let c = ns.character(at: limit)
+            if isInlineWhitespace(c) || c == lt || c == 0x3E { break }
+            limit += 1
+        }
+        limit = trimAutolinkEnd(ns, from: from, end: limit)
+        let value = ns.substring(with: NSRange(location: from, length: limit - from))
+        guard isValidEmail(value) else { return nil }
+        return BareAutolink(range: NSRange(location: from, length: limit - from), url: "mailto:" + value)
+    }
+
+    private static func bareAutolinkCanStart(_ ns: NSString, at index: Int) -> Bool {
+        guard index > 0 else { return true }
+        let previous = ns.character(at: index - 1)
+        return isInlineWhitespace(previous) || previous == star || previous == underscore
+            || previous == tilde || previous == openParen
+    }
+
+    private static func trimAutolinkEnd(_ ns: NSString, from: Int, end: Int) -> Int {
+        var limit = end
+        let trailing: Set<unichar> = [0x3F, 0x21, 0x2E, 0x2C, colon, star, underscore, tilde]
+        while limit > from, trailing.contains(ns.character(at: limit - 1)) { limit -= 1 }
+        while limit > from, ns.character(at: limit - 1) == closeParen {
+            var opens = 0, closes = 0, cursor = from
+            while cursor < limit {
+                if ns.character(at: cursor) == openParen { opens += 1 }
+                if ns.character(at: cursor) == closeParen { closes += 1 }
+                cursor += 1
+            }
+            if closes > opens { limit -= 1 } else { break }
+        }
+        return limit
+    }
+
+    private static func isValidScheme(_ value: String) -> Bool {
+        let scalars = Array(value.unicodeScalars)
+        guard (2...32).contains(scalars.count), let first = scalars.first,
+              (65...90).contains(first.value) || (97...122).contains(first.value) else { return false }
+        return scalars.dropFirst().allSatisfy {
+            (65...90).contains($0.value) || (97...122).contains($0.value)
+                || (48...57).contains($0.value) || $0 == "+" || $0 == "." || $0 == "-"
+        }
+    }
+
+    private static func isValidEmail(_ value: String) -> Bool {
+        let parts = value.split(separator: "@", omittingEmptySubsequences: false)
+        guard parts.count == 2, !parts[0].isEmpty, parts[1].contains("."),
+              !parts[1].hasPrefix("."), !parts[1].hasSuffix(".") else { return false }
+        return parts[0].unicodeScalars.allSatisfy { isEmailLocalCharacter(unichar($0.value)) }
+            && parts[1].unicodeScalars.allSatisfy {
+                (48...57).contains($0.value) || (65...90).contains($0.value)
+                    || (97...122).contains($0.value) || $0 == "." || $0 == "-" || $0 == "_"
+            }
+    }
+
+    private static func isEmailLocalCharacter(_ c: unichar) -> Bool {
+        isWordChar(c) || c == 0x2E || c == dash || c == underscore || c == plus
+    }
+
+    private static func isInlineWhitespace(_ c: unichar) -> Bool {
+        isBlank(c) || isLineBreak(c)
+    }
+
+    private static func isEscapablePunctuation(_ c: unichar) -> Bool {
+        (c >= 0x21 && c <= 0x2F) || (c >= 0x3A && c <= 0x40)
+            || (c >= 0x5B && c <= 0x60) || (c >= 0x7B && c <= 0x7E)
+    }
+
+    private static func normalizedLabel(_ value: String) -> String {
+        value.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ").lowercased()
+    }
+
+    private static func unescape(_ value: String) -> String {
+        var result = ""
+        var escaping = false
+        for scalar in value.unicodeScalars {
+            if escaping {
+                if scalar.value <= UInt16.max, isEscapablePunctuation(unichar(scalar.value)) {
+                    result.unicodeScalars.append(scalar)
+                } else {
+                    result.append("\\")
+                    result.unicodeScalars.append(scalar)
+                }
+                escaping = false
+            } else if scalar == "\\" {
+                escaping = true
+            } else {
+                result.unicodeScalars.append(scalar)
+            }
+        }
+        if escaping { result.append("\\") }
+        return result
     }
 }

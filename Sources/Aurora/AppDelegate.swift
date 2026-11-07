@@ -2,7 +2,8 @@ import AppKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
-    private let startPage = StartPageWindowController()
+    private var formattingKeyMonitor: Any?
+    private var workspaceUndoKeyMonitor: Any?
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         // Le preferenze costruiscono il tema: vanno lette prima che esista una
@@ -11,37 +12,87 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Settings.shared.apply()
         _ = NSDocumentController.shared          // registra l'architettura dei documenti
         NSApp.mainMenu = MainMenu.build()
+
+        // Gli equivalenti di menu per + e - cambiano con il layout di tastiera.
+        // Il monitor locale intercetta i due tasti prima del menu: ⌘+/⌘-
+        // percorrono i livelli del titolo, mentre ⇧⌘+/⇧⌘- cambiano il corpo.
+        formattingKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            let relevantModifiers = event.modifierFlags.intersection([.command, .shift, .control, .option])
+            guard relevantModifiers == [.command]
+                    || relevantModifiers == [.command, .shift] else { return event }
+
+            let characters = [event.characters ?? "", event.charactersIgnoringModifiers ?? ""]
+            let isPlus = event.keyCode == 24 || characters.contains("+") || characters.contains("=")
+            let isMinus = event.keyCode == 27 || characters.contains("-") || characters.contains("_")
+            guard isPlus || isMinus else { return event }
+
+            if relevantModifiers == [.command, .shift] {
+                Settings.shared.adjustFontSize(by: isPlus ? 1 : -1)
+                return nil
+            }
+
+            let action = isPlus
+                ? #selector(MarkdownTextView.promoteHeading(_:))
+                : #selector(MarkdownTextView.demoteHeading(_:))
+            return NSApp.sendAction(action, to: nil, from: nil) ? nil : event
+        }
+
+        // Le operazioni sulla cartella non appartengono a un documento e il
+        // popover può chiudersi subito dopo averle eseguite. Intercettare qui
+        // ⌘Z mantiene quindi l'annullamento disponibile anche dopo il popup.
+        workspaceUndoKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            let modifiers = event.modifierFlags.intersection([.command, .shift, .control, .option])
+            guard modifiers == [.command],
+                  event.charactersIgnoringModifiers?.lowercased() == "z",
+                  WorkspaceFileOperations.shared.canUndo else { return event }
+            return WorkspaceFileOperations.shared.undoLastOperation() ? nil : event
+        }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        if let formattingKeyMonitor {
+            NSEvent.removeMonitor(formattingKeyMonitor)
+        }
+        if let workspaceUndoKeyMonitor {
+            NSEvent.removeMonitor(workspaceUndoKeyMonitor)
+        }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.activate(ignoringOtherApps: true)
 
-        // La cartella di lavoro viene già ripristinata da `Workspace` quando
-        // nasce il singleton. Riapriamo quindi il file usato per ultimo; i
-        // Preferiti restano una destinazione esplicita, e il ripiego quando
-        // non esiste ancora un documento da ripristinare.
+        // Un file aperto da Finder o ripristinato da AppKit ha precedenza
+        // sull'ultimo documento memorizzato.
+        guard NSDocumentController.shared.documents.isEmpty else { return }
         guard let lastDocument = Workspace.shared.lastDocumentURL else {
-            startPage.show()
+            openNewDocumentIfNeeded()
             return
         }
         guard FileManager.default.fileExists(atPath: lastDocument.path) else {
             Workspace.shared.forgetLastDocument()
-            startPage.show()
+            openNewDocumentIfNeeded()
             return
         }
 
         NSDocumentController.shared.openDocument(withContentsOf: lastDocument, display: true) {
             [weak self] _, _, error in
-            if error != nil { self?.startPage.show() }
+            if error != nil {
+                Workspace.shared.forgetLastDocument()
+                self?.openNewDocumentIfNeeded()
+            }
         }
+    }
+
+    private func openNewDocumentIfNeeded() {
+        guard NSDocumentController.shared.documents.isEmpty else { return }
+        NSDocumentController.shared.newDocument(nil)
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool { true }
 
-    /// Senza un documento da ripristinare mostriamo i Preferiti, senza creare
-    /// nel frattempo un documento vuoto.
+    /// L'avvio sceglie il documento dopo il ripristino di AppKit.
     func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool { false }
 
     /// Sceglie la cartella di lavoro, cioè quella che il pulsante in barra del
@@ -64,13 +115,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         SettingsWindowController.shared.show()
     }
 
-    @objc func showStartPage(_ sender: Any?) {
-        startPage.show()
+    @objc func increaseTextSize(_ sender: Any?) {
+        Settings.shared.adjustFontSize(by: 1)
     }
 
-    @objc func addFavoriteFolder(_ sender: Any?) {
-        startPage.addFavoriteFolder()
+    @objc func decreaseTextSize(_ sender: Any?) {
+        Settings.shared.adjustFontSize(by: -1)
     }
+
+    @objc func resetTextSize(_ sender: Any?) {
+        Settings.shared.fontSize = Theme().bodySize
+    }
+
 }
 
 enum MainMenu {
@@ -121,11 +177,9 @@ enum MainMenu {
 
     private static func fileMenu() -> NSMenuItem {
         submenu(localized("File")) { menu in
-            add(menu, localized("Start Page"), #selector(AppDelegate.showStartPage(_:)), "p", [.command, .shift])
-            add(menu, localized("Add Favorite…"), #selector(AppDelegate.addFavoriteFolder(_:)))
-            menu.addItem(.separator())
             add(menu, localized("New"), #selector(NSDocumentController.newDocument(_:)), "n")
             add(menu, localized("Open…"), #selector(NSDocumentController.openDocument(_:)), "o")
+            add(menu, localized("Open Side by Side…"), #selector(DocumentWindowController.openSideBySide(_:)), "\\")
             add(menu, localized("Open Folder…"), #selector(AppDelegate.openFolder(_:)), "o", [.command, .shift])
             let recents = NSMenuItem(title: localized("Open Recent"), action: nil, keyEquivalent: "")
             let recentsMenu = NSMenu(title: localized("Open Recent"))
@@ -172,6 +226,7 @@ enum MainMenu {
         submenu(localized("Format")) { menu in
             add(menu, localized("Bold"), #selector(MarkdownTextView.toggleBold(_:)), "b")
             add(menu, localized("Italic"), #selector(MarkdownTextView.toggleItalic(_:)), "i")
+            add(menu, localized("Underline"), #selector(MarkdownTextView.toggleUnderline(_:)), "u")
             add(menu, localized("Strikethrough"), #selector(MarkdownTextView.toggleStrikethrough(_:)), "x", [.command, .shift])
             add(menu, localized("Highlight"), #selector(MarkdownTextView.toggleHighlight(_:)), "h", [.command, .shift])
             add(menu, localized("Inline Code"), #selector(MarkdownTextView.toggleInlineCode(_:)), "`", [.command])
@@ -188,6 +243,7 @@ enum MainMenu {
                 #selector(MarkdownTextView.demoteHeading(_:)), "-")
             menu.addItem(.separator())
             add(menu, localized("Bulleted List"), #selector(MarkdownTextView.toggleBulletList(_:)), "u", [.command, .shift])
+            add(menu, localized("Ordered List"), #selector(MarkdownTextView.toggleOrderedList(_:)))
             add(menu, localized("Task List"), #selector(MarkdownTextView.toggleTaskList(_:)), "t", [.command, .shift])
             add(menu, localized("Blockquote"), #selector(MarkdownTextView.toggleBlockquote(_:)), "'", [.command, .shift])
             add(menu, localized("Code Block"), #selector(MarkdownTextView.insertCodeBlock(_:)), "k", [.command, .option])
@@ -195,12 +251,24 @@ enum MainMenu {
             add(menu, localized("Edit Table…"), #selector(MarkdownTextView.editTable(_:)))
             menu.addItem(.separator())
             add(menu, localized("Link…"), #selector(MarkdownTextView.insertLink(_:)), "k")
-            add(menu, localized("Horizontal Rule"), #selector(MarkdownTextView.insertHorizontalRule(_:)), "-", [.command, .shift])
+            add(menu, localized("Image…"), #selector(MarkdownTextView.insertImage(_:)))
+            add(menu, localized("Horizontal Rule"), #selector(MarkdownTextView.insertHorizontalRule(_:)))
         }
     }
 
     private static func viewMenu() -> NSMenuItem {
         submenu(localized("View")) { menu in
+            add(menu, localized("Focus Other Document"),
+                #selector(DocumentWindowController.focusOtherDocument(_:)), "\t", [.control])
+            add(menu, localized("Separate Documents"), #selector(DocumentWindowController.separateDocuments(_:)))
+            menu.addItem(.separator())
+            add(menu, localized("Increase Text Size"),
+                #selector(AppDelegate.increaseTextSize(_:)), "+", [.command, .shift])
+            add(menu, localized("Decrease Text Size"),
+                #selector(AppDelegate.decreaseTextSize(_:)), "-", [.command, .shift])
+            add(menu, localized("Actual Text Size"),
+                #selector(AppDelegate.resetTextSize(_:)))
+            menu.addItem(.separator())
             add(menu, localized("Toggle Full Screen"),
                 #selector(NSWindow.toggleFullScreen(_:)), "f", [.command, .control])
         }

@@ -73,8 +73,8 @@ public struct MarkdownTable: Equatable {
     }
 
     /// La forma GFM leggibile dall'utente. I ritorni a capo e le barre dentro
-    /// una cella non sono rappresentabili dal parser dell'app: vengono resi
-    /// innocui, così una modifica non può spezzare la tabella circostante.
+    /// una cella vengono normalizzati; le barre sono conservate usando
+    /// l'escape previsto da GFM, così il contenuto non viene alterato.
     public var markdown: String {
         let width = max(1, columnCount)
         let header = rendered(headers, width: width)
@@ -105,7 +105,8 @@ public struct MarkdownTable: Equatable {
         value
             .replacingOccurrences(of: "\r", with: " ")
             .replacingOccurrences(of: "\n", with: " ")
-            .replacingOccurrences(of: "|", with: "¦")
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "|", with: "\\|")
             .trimmingCharacters(in: .whitespaces)
     }
 }

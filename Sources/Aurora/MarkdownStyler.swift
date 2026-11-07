@@ -1,15 +1,14 @@
 import AppKit
 import AuroraCore
 
-/// Applica lo stile visivo al testo. La sintassi Markdown resta nel documento
-/// ma viene nascosta sulle righe che non contengono il cursore, come in Typora.
+/// Applica lo stile visivo al testo. La sintassi Markdown resta nel documento,
+/// ma non viene mai mostrata nell'area di scrittura.
 final class MarkdownStyler: NSObject, NSTextStorageDelegate {
 
     private unowned let textView: MarkdownTextView
     private var theme: Theme { Theme.current }
 
-    private var cachedLines: [LineInfo]?
-    private var activeLines: Set<Int> = []
+    private var cachedAnalysis: MarkdownAnalysis?
     private var lastEditedRange: NSRange?
     /// Stato "dentro un blocco di codice" della riga che seguiva la modifica, prima della modifica.
     private var fenceStateBeforeEdit: Bool?
@@ -24,15 +23,18 @@ final class MarkdownStyler: NSObject, NSTextStorageDelegate {
 
     private var storage: NSTextStorage? { textView.textStorage }
 
-    var lines: [LineInfo] {
-        if let cached = cachedLines { return cached }
-        let parsed = MarkdownParser.parse((storage?.string ?? "") as NSString)
-        cachedLines = parsed
+    private var analysis: MarkdownAnalysis {
+        if let cached = cachedAnalysis { return cached }
+        let parsed = MarkdownParser.analyze((storage?.string ?? "") as NSString)
+        cachedAnalysis = parsed
         return parsed
     }
 
+    var lines: [LineInfo] { analysis.lines }
+    private var references: [String: LinkReference] { analysis.references }
+
     func invalidateCache() {
-        cachedLines = nil
+        cachedAnalysis = nil
     }
 
     // MARK: - Notifiche di modifica
@@ -42,7 +44,7 @@ final class MarkdownStyler: NSObject, NSTextStorageDelegate {
         guard editedMask.contains(.editedCharacters) else { return }
         // Prima di buttare la cache: com'era la riga che seguiva la modifica?
         // Se apre o chiude un blocco di codice, cambia lo stile di tutto ciò che segue.
-        if let cached = cachedLines {
+        if let cached = cachedAnalysis?.lines {
             let oldEnd = editedRange.location + editedRange.length - delta
             fenceStateBeforeEdit = lineIndex(containing: oldEnd, in: cached).map { cached[$0].isInsideFence }
         } else {
@@ -111,35 +113,21 @@ final class MarkdownStyler: NSObject, NSTextStorageDelegate {
         // Un margine oltre il bordo dello schermo, così scorrendo di poco non
         // si trovano righe non ancora stilizzate.
         let margine = 20
-        activeLines = computeActiveLines(all)
         restyle(lineRange: max(0, visible.lowerBound - margine)...min(all.count - 1, visible.upperBound + margine))
     }
 
-    /// Chiamato quando il cursore si sposta: cambia l'insieme delle righe "in modifica".
+    /// Il cursore non cambia la resa. Oltre a riallineare gli attributi di
+    /// digitazione, ristilizza la riga attiva: AppKit può rigenerare i glifi
+    /// attorno al punto d'inserimento e, in alcuni passaggi di selezione, usare
+    /// per un fotogramma gli attributi ereditati dal testo vicino. Ripassare la
+    /// riga rende esplicito l'invariante che la sintassi resta sempre nascosta.
     func selectionChanged() {
-        let all = lines
-        let updated = computeActiveLines(all)
-        guard updated != activeLines else { return }
-        let changed = updated.symmetricDifference(activeLines)
-        activeLines = updated
-        for index in changed.sorted() where index < all.count {
-            restyle(lineRange: index...index)
-        }
         sanitizeTypingAttributes()
-    }
-
-    /// Righe toccate dalla selezione: sono quelle su cui la sintassi resta visibile.
-    private func computeActiveLines(_ all: [LineInfo]) -> Set<Int> {
-        let selection = textView.selectedRange()
+        let all = lines
         guard !all.isEmpty,
-              var first = lineIndex(containing: selection.location, in: all),
-              var last = lineIndex(containing: NSMaxRange(selection), in: all) else { return [] }
-        // Il cursore a inizio riga non "apre" la riga precedente.
-        while first > 0, all[first].range.location > selection.location { first -= 1 }
-        while first < last, selection.location > all[first].contentsEnd { first += 1 }
-        while last > first, all[last].range.location >= NSMaxRange(selection) { last -= 1 }
-        guard first <= last else { return [] }
-        return Set(first...last)
+              let index = lineIndex(containing: textView.selectedRange().location,
+                                    in: all) else { return }
+        restyle(lineRange: index...index)
     }
 
     private func lineIndex(containing location: Int, in all: [LineInfo]) -> Int? {
@@ -164,7 +152,6 @@ final class MarkdownStyler: NSObject, NSTextStorageDelegate {
         safetyRestyleWorkItem?.cancel()
         let all = lines
         guard !all.isEmpty else { return }
-        activeLines = computeActiveLines(all)
         restyle(lineRange: 0...(all.count - 1))
         sanitizeTypingAttributes()
     }
@@ -180,7 +167,7 @@ final class MarkdownStyler: NSObject, NSTextStorageDelegate {
         let ns = storage.string as NSString
         storage.beginEditing()
         for index in lower...upper {
-            apply(all[index], index: index, ns: ns, storage: storage)
+            apply(all[index], index: index, all: all, ns: ns, storage: storage)
         }
         storage.endEditing()
 
@@ -194,11 +181,10 @@ final class MarkdownStyler: NSObject, NSTextStorageDelegate {
         textView.needsDisplay = true
     }
 
-    private func apply(_ line: LineInfo, index: Int, ns: NSString, storage: NSTextStorage) {
+    private func apply(_ line: LineInfo, index: Int, all: [LineInfo],
+                       ns: NSString, storage: NSTextStorage) {
         guard line.range.length > 0 else { return }
-        let active = activeLines.contains(index)
-        let isCode = line.kind == .codeBody || line.kind == .fence
-        let showsBlockSource = shouldShowBlockSource(for: line, active: active)
+        let isCode = line.kind == .codeBody || line.kind == .fence || line.kind == .indentedCode
 
         // --- Font e paragrafo di base per la riga
         var baseFont = theme.body
@@ -207,19 +193,30 @@ final class MarkdownStyler: NSObject, NSTextStorageDelegate {
         case .heading(let level):
             baseFont = theme.heading(level)
             baseColor = theme.headingText
-        case .codeBody, .fence:
+        case .codeBody, .fence, .indentedCode:
             baseFont = theme.mono
             baseColor = theme.codeText
+        case .linkDefinition:
+            baseFont = theme.mono
+            baseColor = theme.syntax
         case .tableHeader:
-            baseFont = NSFont.systemFont(ofSize: theme.bodySize, weight: .semibold)
+            baseFont = theme.tableHeader
         case .tableDelimiter, .tableRow:
-            baseFont = theme.body
+            baseFont = theme.tableBody
         default:
             break
         }
-        if line.quoteDepth > 0 && !isCode { baseColor = theme.quoteText }
+        if line.quoteDepth > 0 && !isCode { baseColor = theme.text }
 
-        let (paragraph, baselineOffset) = paragraphStyle(for: line, font: baseFont)
+        let inline: InlineResult? = !isCode && supportsInlineContent(line.kind) && line.contentRange.length > 0
+            ? MarkdownParser.parseInline(ns, range: inlineRange(for: index, in: all), references: references)
+            : nil
+        let imageHeight = inline?.images
+            .filter { NSLocationInRange($0.range.location, line.range) }
+            .compactMap { textView.previewSize(for: $0.url)?.height }
+            .max()
+        let (paragraph, baselineOffset) = paragraphStyle(for: line, font: baseFont,
+                                                         imageHeight: imageHeight)
         var attributes: [NSAttributedString.Key: Any] = [
             .font: baseFont,
             .foregroundColor: baseColor,
@@ -227,10 +224,8 @@ final class MarkdownStyler: NSObject, NSTextStorageDelegate {
         ]
         if baselineOffset != 0 { attributes[.baselineOffset] = baselineOffset }
         if isCode { attributes[.auroraBlock] = "code" }
-        // Il tratto si disegna solo quando i trattini sono nascosti: si vede la
-        // sorgente oppure la decorazione, mai entrambe. La scelta è centralizzata
-        // in `shouldShowBlockSource` insieme agli altri elementi di blocco.
-        if line.kind == .horizontalRule, !showsBlockSource { attributes[.auroraBlock] = "hr" }
+        // I trattini restano nascosti e al loro posto si disegna il tratto.
+        if line.kind == .horizontalRule { attributes[.auroraBlock] = "hr" }
         if case .heading(let level) = line.kind { attributes[.kern] = theme.headingTracking(level) }
         if line.quoteDepth > 0 { attributes[.auroraQuoteDepth] = line.quoteDepth }
 
@@ -249,34 +244,38 @@ final class MarkdownStyler: NSObject, NSTextStorageDelegate {
         }
 
         // --- Contenuto inline
-        if !isCode, line.contentRange.length > 0, line.kind != .horizontalRule {
-            let inline = MarkdownParser.parseInline(ns, range: line.contentRange)
+        if let inline {
             for run in inline.runs {
-                applyInline(run, baseFont: baseFont, baseColor: baseColor, storage: storage)
+                if let clipped = intersection(run.range, line.range) {
+                    var local = run
+                    local.range = clipped
+                    applyInline(local, baseFont: baseFont, baseColor: baseColor, storage: storage)
+                }
             }
             for marker in inline.markers {
-                conceal(marker, active: active, storage: storage)
+                if let clipped = intersection(marker, line.range) {
+                    conceal(clipped, storage: storage)
+                }
+            }
+            for image in inline.images where NSLocationInRange(image.range.location, line.range) {
+                _ = textView.applyImagePreview(image, to: storage)
             }
         }
 
         // --- Riga ``` : nascosta quando non si sta modificando, fa da margine del riquadro
-        if line.kind == .fence, !showsBlockSource, line.contentRange.length > 0 {
+        if line.kind == .fence, line.contentRange.length > 0 {
             storage.addAttribute(.auroraConceal, value: true, range: line.contentRange)
         }
 
         // --- Marcatori di blocco (#, >, ```, rientri)
         for marker in line.markers {
-            conceal(marker, active: showsBlockSource, storage: storage)
+            conceal(marker, storage: storage)
         }
 
         // --- Elenchi puntati: pallino disegnato al posto del trattino
         if let bullet = line.bulletRange, bullet.length > 0 {
-            if showsBlockSource {
-                storage.addAttribute(.foregroundColor, value: theme.syntax, range: bullet)
-            } else {
-                storage.addAttributes([.foregroundColor: NSColor.clear,
-                                       .auroraGlyph: bulletGlyph(for: line.listIndent)], range: bullet)
-            }
+            storage.addAttributes([.foregroundColor: NSColor.clear,
+                                   .auroraGlyph: bulletGlyph(for: line.listIndent)], range: bullet)
         }
         if let ordered = line.orderedRange, ordered.length > 0 {
             storage.addAttributes([
@@ -287,12 +286,8 @@ final class MarkdownStyler: NSObject, NSTextStorageDelegate {
 
         // --- Task list: casella disegnata al posto di "[ ]"
         if let checkbox = line.checkboxRange {
-            if showsBlockSource {
-                storage.addAttribute(.foregroundColor, value: theme.syntax, range: checkbox)
-            } else {
-                storage.addAttributes([.foregroundColor: NSColor.clear,
-                                       .auroraGlyph: line.checkboxChecked ? "☑" : "☐"], range: checkbox)
-            }
+            storage.addAttributes([.foregroundColor: NSColor.clear,
+                                   .auroraGlyph: line.checkboxChecked ? "☑" : "☐"], range: checkbox)
             storage.addAttribute(.auroraCheckbox, value: line.checkboxChecked, range: checkbox)
             if line.checkboxChecked, line.contentRange.length > 0 {
                 storage.addAttributes([.strikethroughStyle: NSUnderlineStyle.single.rawValue,
@@ -301,22 +296,11 @@ final class MarkdownStyler: NSObject, NSTextStorageDelegate {
         }
 
         // --- Linea orizzontale: caratteri nascosti, il tratto è disegnato dalla vista
-        if line.kind == .horizontalRule, !showsBlockSource {
+        if line.kind == .horizontalRule {
             let content = NSRange(location: line.range.location,
                                   length: max(0, line.contentsEnd - line.range.location))
             if content.length > 0 { storage.addAttribute(.auroraConceal, value: true, range: content) }
         }
-    }
-
-    /// Unica regola per la transizione fra sorgente Markdown e decorazione.
-    ///
-    /// Normalmente la sintassi di blocco ricompare sulla riga attiva. Una task
-    /// list fa eccezione perché la casella non è una semplice anteprima: è un
-    /// controllo interattivo e deve restare stabile mentre se ne scrive il testo.
-    /// Tutti gli elementi di blocco passano da qui, evitando eccezioni sparse
-    /// che possano far oscillare una decorazione durante la digitazione.
-    private func shouldShowBlockSource(for line: LineInfo, active: Bool) -> Bool {
-        active && line.checkboxRange == nil
     }
 
     private func bulletGlyph(for indent: Int) -> String {
@@ -327,13 +311,9 @@ final class MarkdownStyler: NSObject, NSTextStorageDelegate {
         }
     }
 
-    private func conceal(_ range: NSRange, active: Bool, storage: NSTextStorage) {
+    private func conceal(_ range: NSRange, storage: NSTextStorage) {
         guard range.length > 0, NSMaxRange(range) <= storage.length else { return }
-        if active {
-            storage.addAttribute(.foregroundColor, value: theme.syntax, range: range)
-        } else {
-            storage.addAttribute(.auroraConceal, value: true, range: range)
-        }
+        storage.addAttribute(.auroraConceal, value: true, range: range)
     }
 
     private func applyInline(_ run: InlineRun, baseFont: NSFont, baseColor: NSColor, storage: NSTextStorage) {
@@ -353,6 +333,9 @@ final class MarkdownStyler: NSObject, NSTextStorageDelegate {
         if style.contains(.strike) {
             attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
             attributes[.foregroundColor] = theme.quoteText
+        }
+        if style.contains(.underline) {
+            attributes[.underlineStyle] = NSUnderlineStyle.single.rawValue
         }
         if style.contains(.highlight) {
             attributes[.backgroundColor] = theme.highlight
@@ -379,14 +362,14 @@ final class MarkdownStyler: NSObject, NSTextStorageDelegate {
     ///
     /// Per questo la funzione non riceve `active`: così il vincolo lo fa
     /// rispettare il compilatore, non la memoria di chi tocca il file.
-    private func paragraphStyle(for line: LineInfo, font: NSFont) -> (NSParagraphStyle, CGFloat) {
+    private func paragraphStyle(for line: LineInfo, font: NSFont,
+                                imageHeight: CGFloat?) -> (NSParagraphStyle, CGFloat) {
         let style = NSMutableParagraphStyle()
-        // Nessun tipo di riga aggiunge spazio di coda. La separazione verticale la
-        // danno le righe vuote — che in Markdown sono anche il modo in cui la
-        // separazione è scritta nel file. Così cambiare mestiere a una riga non
-        // cambia lo spazio che occupa, e due righe consecutive senza riga vuota in
-        // mezzo restano un solo paragrafo, come vuole il Markdown.
+        // Le righe testuali non aggiungono spazio di coda. La sola eccezione è
+        // l'anteprima di un'immagine, che riserva sotto la sintassi l'altezza dei
+        // pixel disegnati. Non dipende dal cursore e quindi resta stabile.
         style.paragraphSpacing = 0
+        if let imageHeight { style.paragraphSpacing = min(360, imageHeight) + 8 }
         let quoteIndent = CGFloat(line.quoteDepth) * theme.quoteIndent
         var multiple = theme.lineHeightMultiple
 
@@ -395,11 +378,11 @@ final class MarkdownStyler: NSObject, NSTextStorageDelegate {
             multiple = 1.25
             style.firstLineHeadIndent = quoteIndent
             style.headIndent = quoteIndent
-        case .codeBody, .fence:
-            multiple = 1.35
+        case .codeBody, .fence, .indentedCode:
+            multiple = 1.5
             style.firstLineHeadIndent = theme.surfacePadding + quoteIndent
             style.headIndent = theme.surfacePadding + quoteIndent
-        case .bulletItem, .orderedItem:
+        case .bulletItem, .orderedItem, .listContinuation:
             let indent = CGFloat(line.listIndent) * theme.listIndent + quoteIndent
             style.firstLineHeadIndent = indent
             style.headIndent = indent + theme.listIndent
@@ -409,7 +392,7 @@ final class MarkdownStyler: NSObject, NSTextStorageDelegate {
             style.minimumLineHeight = InlineTableView.rowHeight
             style.maximumLineHeight = InlineTableView.rowHeight
             return (style, 0)
-        case .tableDelimiter:
+        case .tableDelimiter, .setextUnderline:
             // È sintassi di salvataggio, non una riga dell'interfaccia: la
             // comprimiamo a un punto, lasciando alla griglia il suo bordo.
             style.firstLineHeadIndent = theme.surfacePadding + quoteIndent
@@ -435,12 +418,93 @@ final class MarkdownStyler: NSObject, NSTextStorageDelegate {
         return (style, ((height - natural) / 2).rounded())
     }
 
+    private func supportsInlineContent(_ kind: LineKind) -> Bool {
+        switch kind {
+        case .paragraph, .heading, .bulletItem, .orderedItem, .listContinuation:
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// CommonMark analizza gli inline sull'intero paragrafo, non riga per
+    /// riga. Individua il paragrafo logico che contiene la riga corrente.
+    private func inlineRange(for index: Int, in all: [LineInfo]) -> NSRange {
+        let line = all[index]
+        var first = index
+        var last = index
+
+        if line.kind == .paragraph {
+            while first > 0, all[first - 1].kind == .paragraph,
+                  all[first - 1].quoteDepth == line.quoteDepth { first -= 1 }
+            while last + 1 < all.count, all[last + 1].kind == .paragraph,
+                  all[last + 1].quoteDepth == line.quoteDepth { last += 1 }
+        } else if line.kind == .bulletItem || line.kind == .orderedItem || line.kind == .listContinuation {
+            while first > 0, all[first].kind == .listContinuation,
+                  all[first - 1].kind == .listContinuation
+                    || all[first - 1].kind == .bulletItem
+                    || all[first - 1].kind == .orderedItem { first -= 1 }
+            while last + 1 < all.count, all[last + 1].kind == .listContinuation { last += 1 }
+        }
+
+        return NSRange(location: all[first].contentRange.location,
+                       length: max(0, all[last].contentsEnd - all[first].contentRange.location))
+    }
+
+    /// Analisi inline del paragrafo che contiene la selezione. Viene condivisa
+    /// dai comandi di formattazione per non interpretare delimitatori di altri
+    /// paragrafi come se appartenessero alla selezione corrente.
+    func inlineResult(containing selection: NSRange) -> InlineResult? {
+        guard let storage else { return nil }
+        let all = lines
+        guard let index = lineIndex(containing: selection.location, in: all),
+              supportsInlineContent(all[index].kind) else { return nil }
+        let scope = inlineRange(for: index, in: all)
+        guard selection.location >= scope.location,
+              NSMaxRange(selection) <= NSMaxRange(scope) else { return nil }
+
+        return MarkdownParser.parseInline(storage.string as NSString,
+                                          range: scope,
+                                          references: references)
+    }
+
+    /// Restituisce il delimitatore più interno che applica `style` all'intera
+    /// selezione. Anche un cursore senza selezione conta come contenuto: è ciò
+    /// che permette a una shortcut di togliere lo stile dal punto in cui si scrive.
+    func inlineFormatting(enclosing selection: NSRange,
+                          style: InlineStyle) -> InlineFormatting? {
+        guard let parsed = inlineResult(containing: selection) else { return nil }
+        return parsed.formats
+            .filter { format in
+                let content = format.contentRange
+                let outer = NSRange(location: format.openingRange.location,
+                                    length: NSMaxRange(format.closingRange)
+                                        - format.openingRange.location)
+                return format.style.contains(style)
+                    && (selection.location >= content.location
+                        && NSMaxRange(selection) <= NSMaxRange(content)
+                        || selection.location >= outer.location
+                        && NSMaxRange(selection) <= NSMaxRange(outer))
+            }
+            .min { $0.contentRange.length < $1.contentRange.length }
+    }
+
+    private func intersection(_ lhs: NSRange, _ rhs: NSRange) -> NSRange? {
+        let start = max(lhs.location, rhs.location)
+        let end = min(NSMaxRange(lhs), NSMaxRange(rhs))
+        return end > start ? NSRange(location: start, length: end - start) : nil
+    }
+
     /// Impedisce che gli attributi interni (sintassi nascosta) vengano ereditati da ciò che si digita.
     private func sanitizeTypingAttributes() {
         var attributes = textView.typingAttributes
         for key: NSAttributedString.Key in [.auroraConceal, .auroraGlyph, .auroraBlock,
-                                            .auroraCheckbox, .auroraLink, .auroraQuoteDepth] {
+                                            .auroraCheckbox, .auroraLink, .auroraImage, .auroraQuoteDepth] {
             attributes.removeValue(forKey: key)
+        }
+        if let color = attributes[.foregroundColor] as? NSColor, color == .clear {
+            attributes[.foregroundColor] = theme.text
+            attributes.removeValue(forKey: .underlineStyle)
         }
         textView.typingAttributes = attributes
     }

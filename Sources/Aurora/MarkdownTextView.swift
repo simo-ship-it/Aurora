@@ -1,7 +1,14 @@
 import AppKit
 import AuroraCore
+import UniformTypeIdentifiers
 
 final class MarkdownTextView: NSTextView, NSLayoutManagerDelegate {
+
+    weak var owningDocument: MarkdownDocument?
+
+    // L'editor può cambiare finestra o rimanere nel riquadro inattivo. La
+    // cronologia appartiene al suo documento, anche durante questi passaggi.
+    override var undoManager: UndoManager? { owningDocument?.undoManager ?? super.undoManager }
 
     var styler: MarkdownStyler!
     private var theme: Theme { Theme.current }
@@ -11,8 +18,15 @@ final class MarkdownTextView: NSTextView, NSLayoutManagerDelegate {
     private var inlineTables: [InlineTableView] = []
     private var inlineTableRefreshScheduled = false
     private var activeInlineTableRange: NSRange?
+    private var imageCache: [String: NSImage] = [:]
+    private var pendingImages: Set<String> = []
     private var lastAllowedTextSelection = NSRange(location: 0, length: 0)
     private var normalizingTableSelection = false
+    /// Formati attivati da shortcut senza una selezione. Non scriviamo
+    /// delimitatori vuoti (sarebbero Markdown non valido e quindi visibile):
+    /// li aggiungiamo al primo testo digitato.
+    private var pendingInlineFormats: [(style: InlineStyle, opening: String, closing: String)] = []
+    private var pendingInlineLocation: Int?
     /// `true` per ↑, `false` per ↓; serve a scegliere il lato corretto del blocco.
     private var pendingVerticalNavigation: Bool?
     /// Posizione della "/" che ha aperto il menu, o `NSNotFound`.
@@ -60,11 +74,20 @@ final class MarkdownTextView: NSTextView, NSLayoutManagerDelegate {
         scheduleInlineTableRefresh()
     }
 
+    /// La colonna può cambiare larghezza senza che cambi il tema. Le viste in
+    /// linea (soprattutto le tabelle) devono comunque seguire subito il nuovo
+    /// contenitore di testo durante il trascinamento delle guide.
+    func contentInsetsDidChange() {
+        needsDisplay = true
+        scheduleInlineTableRefresh()
+    }
+
     override var acceptsFirstResponder: Bool { true }
 
     // MARK: - Menu dei comandi ("/")
 
     override func insertText(_ string: Any, replacementRange: NSRange) {
+        if insertTextWithPendingInlineFormats(string, replacementRange: replacementRange) { return }
         super.insertText(string, replacementRange: replacementRange)
         guard (string as? String) == "/" || (string as? NSAttributedString)?.string == "/" else { return }
 
@@ -76,10 +99,43 @@ final class MarkdownTextView: NSTextView, NSLayoutManagerDelegate {
         }
     }
 
+    private func insertTextWithPendingInlineFormats(_ value: Any,
+                                                     replacementRange: NSRange) -> Bool {
+        let effectiveRange = replacementRange.location == NSNotFound
+            ? selectedRange()
+            : replacementRange
+        guard !pendingInlineFormats.isEmpty,
+              let location = pendingInlineLocation,
+              effectiveRange == NSRange(location: location, length: 0),
+              selectedRange() == effectiveRange else {
+            if selectedRange().location != pendingInlineLocation { clearPendingInlineFormats() }
+            return false
+        }
+        let inserted: String
+        if let string = value as? String { inserted = string }
+        else if let attributed = value as? NSAttributedString { inserted = attributed.string }
+        else { return false }
+        guard !inserted.isEmpty else { return false }
+
+        let opening = pendingInlineFormats.map(\.opening).joined()
+        let closing = pendingInlineFormats.reversed().map(\.closing).joined()
+        clearPendingInlineFormats()
+        super.insertText(opening + inserted + closing, replacementRange: replacementRange)
+        let caret = location + opening.utf16.count + inserted.utf16.count
+        setSelectedRange(NSRange(location: caret, length: 0))
+        return true
+    }
+
+    private func clearPendingInlineFormats() {
+        pendingInlineFormats.removeAll()
+        pendingInlineLocation = nil
+    }
+
     /// Il menu si apre solo a inizio riga o dopo uno spazio, e mai dentro un
     /// blocco di codice: così una barra dentro `http://` o in `e/o` resta una barra.
     private func slashAllowed(at location: Int) -> Bool {
-        if let line = currentLine(at: location), line.kind == .codeBody || line.kind == .fence {
+        if let line = currentLine(at: location), line.kind == .codeBody
+            || line.kind == .fence || line.kind == .indentedCode {
             return false
         }
         guard location > 0 else { return true }
@@ -137,6 +193,89 @@ final class MarkdownTextView: NSTextView, NSLayoutManagerDelegate {
         }
         super.keyDown(with: event)
         pendingVerticalNavigation = nil
+    }
+
+    /// I marcatori invisibili restano modificabili: al bordo visivo del testo
+    /// Backspace elimina il carattere Markdown adiacente invece di saltarlo.
+    /// Per i titoli si toglie un cancelletto per volta, mantenendo valido il
+    /// titolo fino all'ultimo livello (`## Titolo` → `# Titolo` → `Titolo`).
+    override func deleteBackward(_ sender: Any?) {
+        let selection = selectedRange()
+        guard selection.length == 0 else {
+            super.deleteBackward(sender)
+            return
+        }
+
+        if deleteOneHeadingMarker(at: selection.location) { return }
+        if deleteConcealedCharacter(at: selection.location) { return }
+        super.deleteBackward(sender)
+    }
+
+    private func deleteOneHeadingMarker(at caret: Int) -> Bool {
+        guard let line = currentLine(at: caret),
+              case .heading(let level) = line.kind,
+              let headingMarker = line.markers.first(where: {
+                  (string as NSString).range(of: "#", options: [], range: $0).location != NSNotFound
+              }),
+              caret >= headingMarker.location,
+              caret <= NSMaxRange(headingMarker) else { return false }
+
+        let ns = string as NSString
+        var hash = NSMaxRange(headingMarker)
+        while hash > headingMarker.location {
+            let character = ns.character(at: hash - 1)
+            if character == 0x20 || character == 0x09 { hash -= 1 } else { break }
+        }
+        guard hash > headingMarker.location, ns.character(at: hash - 1) == 0x23 else { return false }
+
+        let target: NSRange
+        let nextCaret: Int
+        if level > 1 {
+            let previous = caret - 1
+            let hashToDelete = previous >= headingMarker.location && previous < hash
+                && ns.character(at: previous) == 0x23 ? previous : hash - 1
+            target = NSRange(location: hashToDelete, length: 1)
+            nextCaret = caret > target.location ? caret - 1 : caret
+        } else {
+            // Con l'ultimo cancelletto sparisce anche il separatore che faceva
+            // parte della sintassi, senza lasciare uno spazio davanti al testo.
+            target = headingMarker
+            nextCaret = headingMarker.location
+        }
+        return deleteCharacters(in: target, placingCaretAt: nextCaret)
+    }
+
+    private func deleteConcealedCharacter(at caret: Int) -> Bool {
+        guard let storage = textStorage, caret > 0, storage.length > 0 else { return false }
+
+        var concealedRange = NSRange(location: 0, length: 0)
+        guard storage.attribute(.auroraConceal, at: caret - 1,
+                                effectiveRange: &concealedRange) != nil else { return false }
+        guard concealedRange.length > 0 else { return false }
+
+        // Se il marcatore comprende anche il suo spazio separatore, si elimina
+        // prima la sintassi vera e propria. Lo spazio verrà tolto insieme
+        // all'ultimo marcatore dai casi strutturali, come quello dei titoli.
+        let ns = storage.string as NSString
+        var location = caret - 1
+        while location > concealedRange.location {
+            let character = ns.character(at: location)
+            if character == 0x20 || character == 0x09 { location -= 1 } else { break }
+        }
+        let target = ns.rangeOfComposedCharacterSequence(at: location)
+        let nextCaret = caret > target.location ? caret - target.length : caret
+        return deleteCharacters(in: target, placingCaretAt: nextCaret)
+    }
+
+    private func deleteCharacters(in range: NSRange, placingCaretAt caret: Int) -> Bool {
+        guard range.length > 0,
+              let storage = textStorage,
+              NSMaxRange(range) <= storage.length,
+              shouldChangeText(in: range, replacementString: "") else { return false }
+        storage.replaceCharacters(in: range, with: "")
+        didChangeText()
+        setSelectedRange(NSRange(location: min(caret, storage.length), length: 0))
+        return true
     }
 
     override func resignFirstResponder() -> Bool {
@@ -289,6 +428,12 @@ final class MarkdownTextView: NSTextView, NSLayoutManagerDelegate {
                 NSBezierPath(roundedRect: surface,
                              xRadius: theme.surfaceRadius,
                              yRadius: theme.surfaceRadius).fill()
+                theme.rule.setStroke()
+                let border = NSBezierPath(roundedRect: surface.insetBy(dx: 0.5, dy: 0.5),
+                                          xRadius: theme.surfaceRadius,
+                                          yRadius: theme.surfaceRadius)
+                border.lineWidth = 1
+                border.stroke()
             case "hr":
                 // Il tratto appartiene a una riga sola: la prima dell'intervallo.
                 guard let row = rows(in: range).first else { return }
@@ -335,12 +480,45 @@ final class MarkdownTextView: NSTextView, NSLayoutManagerDelegate {
                 self.drawBullet(at: NSPoint(x: left + 3, y: middle), glyph: glyph)
             }
         }
+
+        // L'immagine è una decorazione della riga: la sorgente Markdown resta
+        // nel documento a larghezza zero, senza sostituire caratteri con attachment.
+        storage.enumerateAttribute(.auroraImage, in: visible) { value, range, _ in
+            guard let destination = value as? String,
+                  let preview = self.previewImage(for: destination),
+                  let size = self.previewSize(for: destination)
+            else { return }
+            let glyphs = layout.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+            guard glyphs.length > 0 else { return }
+            var row = layout.lineFragmentRect(forGlyphAt: glyphs.location, effectiveRange: nil)
+            row.origin.x += origin.x
+            row.origin.y += origin.y
+            let ns = storage.string as NSString
+            let sourceLine = ns.lineRange(for: range)
+            var top = row.minY
+            if sourceLine.location > 0 {
+                let previous = ns.lineRange(for: NSRange(location: sourceLine.location - 1, length: 0))
+                let previousGlyphs = layout.glyphRange(forCharacterRange: previous,
+                                                       actualCharacterRange: nil)
+                if previousGlyphs.length > 0 {
+                    var previousRow = layout.lineFragmentRect(forGlyphAt: previousGlyphs.location,
+                                                              effectiveRange: nil)
+                    previousRow.origin.y += origin.y
+                    top = previousRow.maxY + 4
+                }
+            }
+            let frame = NSRect(x: origin.x + max(0, (contentWidth - size.width) / 2),
+                               y: top, width: size.width, height: size.height)
+            preview.draw(in: frame, from: .zero, operation: .sourceOver,
+                         fraction: 1, respectFlipped: true,
+                         hints: [.interpolation: NSImageInterpolation.high])
+        }
     }
 
     /// Livello 0 pieno, livello 1 vuoto, livello 2 quadrato: la forma dice la profondità.
     private func drawBullet(at center: NSPoint, glyph: String) {
-        theme.quoteText.setFill()
-        theme.quoteText.setStroke()
+        theme.text.setFill()
+        theme.text.setStroke()
         switch glyph {
         case "◦":
             let radius: CGFloat = 3
@@ -382,7 +560,7 @@ final class MarkdownTextView: NSTextView, NSLayoutManagerDelegate {
         mark.lineWidth = 1.7
         mark.lineCapStyle = .round
         mark.lineJoinStyle = .round
-        NSColor.white.setStroke()
+        theme.background.setStroke()
         mark.stroke()
     }
 
@@ -485,38 +663,108 @@ final class MarkdownTextView: NSTextView, NSLayoutManagerDelegate {
 
     // MARK: - Comandi di formattazione
 
-    @objc func toggleBold(_ sender: Any?) { wrapSelection(with: "**") }
-    @objc func toggleItalic(_ sender: Any?) { wrapSelection(with: "*") }
-    @objc func toggleStrikethrough(_ sender: Any?) { wrapSelection(with: "~~") }
-    @objc func toggleInlineCode(_ sender: Any?) { wrapSelection(with: "`") }
-    @objc func toggleHighlight(_ sender: Any?) { wrapSelection(with: "==") }
+    @objc func toggleBold(_ sender: Any?) { toggleInlineStyle(.bold, opening: "**") }
+    @objc func toggleItalic(_ sender: Any?) { toggleInlineStyle(.italic, opening: "*") }
+    @objc func toggleUnderline(_ sender: Any?) {
+        toggleInlineStyle(.underline, opening: "<u>", closing: "</u>")
+    }
+    @objc func toggleStrikethrough(_ sender: Any?) { toggleInlineStyle(.strike, opening: "~~") }
+    @objc func toggleInlineCode(_ sender: Any?) { toggleInlineStyle(.code, opening: "`") }
+    @objc func toggleHighlight(_ sender: Any?) { toggleInlineStyle(.highlight, opening: "==") }
 
-    private func wrapSelection(with marker: String) {
+    private func toggleInlineStyle(_ style: InlineStyle, opening: String, closing: String? = nil) {
         let ns = string as NSString
         // Lo spazio e gli a capo ai bordi della selezione restano fuori: dentro
         // i marcatori impedirebbero all'emfasi di chiudersi.
         let selection = MarkdownEditing.emphasisRange(in: ns, selection: selectedRange())
-        let markerLength = marker.utf16.count
+        let closing = closing ?? opening
+        let markerLength = opening.utf16.count
+        let parsed = inlineResult(for: selection, in: ns)
 
-        // Se la selezione è già racchiusa dal marcatore, lo rimuove.
-        let outer = NSRange(location: selection.location - markerLength,
-                            length: selection.length + markerLength * 2)
-        if outer.location >= 0, NSMaxRange(outer) <= ns.length,
-           ns.substring(with: NSRange(location: outer.location, length: markerLength)) == marker,
-           ns.substring(with: NSRange(location: NSMaxRange(selection), length: markerLength)) == marker {
-            let inner = ns.substring(with: selection)
-            insertText(inner, replacementRange: outer)
-            setSelectedRange(NSRange(location: outer.location, length: selection.length))
+        // Lo stile si toglie anche col cursore nel mezzo o con una selezione
+        // parziale. Una selezione fatta col mouse può includere i delimitatori
+        // invisibili: anche l'intervallo esterno conta quindi come "racchiuso".
+        // Vale anche per le varianti __/__ e per *** combinato.
+        if let format = parsed?.formats
+            .filter({ format in
+                guard format.style.contains(style) else { return false }
+                let outer = NSRange(location: format.openingRange.location,
+                                    length: NSMaxRange(format.closingRange)
+                                        - format.openingRange.location)
+                let content = format.contentRange
+                let insideContent = selection.location >= content.location
+                    && NSMaxRange(selection) <= NSMaxRange(content)
+                let includesSyntax = selection.location >= outer.location
+                    && NSMaxRange(selection) <= NSMaxRange(outer)
+                return insideContent || includesSyntax
+            })
+            .min(by: { $0.contentRange.length < $1.contentRange.length }) {
+            removeInlineStyle(style, from: format, preserving: selection, in: ns)
+            return
+        }
+
+        // Senza selezione, la shortcut prepara il prossimo testo digitato. In
+        // questo modo non compaiono mai delimitatori vuoti come ****.
+        if selection.length == 0 {
+            if pendingInlineLocation != selection.location { clearPendingInlineFormats() }
+            pendingInlineLocation = selection.location
+            if let index = pendingInlineFormats.firstIndex(where: { $0.style == style }) {
+                pendingInlineFormats.remove(at: index)
+                if pendingInlineFormats.isEmpty { pendingInlineLocation = nil }
+            } else {
+                pendingInlineFormats.append((style, opening, closing))
+            }
+            return
+        }
+
+        clearPendingInlineFormats()
+
+        // Se una selezione mista interseca testo già formattato con lo stesso
+        // stile, normalizza i delimitatori prima di racchiudere tutto. Così
+        // grassetto + testo normale diventa un unico grassetto valido.
+        if let parsed,
+           let edit = MarkdownEditing.applyingInlineStyle(style, to: selection,
+                                                           formats: parsed.formats, in: ns,
+                                                           opening: opening, closing: closing) {
+            insertText(edit.replacement, replacementRange: edit.replacementRange)
+            setSelectedRange(edit.selectionAfterEdit)
             return
         }
 
         let selected = selection.length > 0 ? ns.substring(with: selection) : ""
-        insertText(marker + selected + marker, replacementRange: selection)
-        if selection.length == 0 {
-            setSelectedRange(NSRange(location: selection.location + markerLength, length: 0))
-        } else {
-            setSelectedRange(NSRange(location: selection.location + markerLength, length: selection.length))
+        insertText(opening + selected + closing, replacementRange: selection)
+        setSelectedRange(NSRange(location: selection.location + markerLength, length: selection.length))
+    }
+
+    /// TextKit include nella selezione i caratteri invisibili incontrati fra i
+    /// due estremi. Se questo porta l'intervallo appena oltre il `contentRange`
+    /// calcolato dallo styler, ripiega sull'intera riga selezionata.
+    private func inlineResult(for selection: NSRange, in ns: NSString) -> InlineResult? {
+        if let parsed = styler.inlineResult(containing: selection) { return parsed }
+        guard selection.location >= 0, NSMaxRange(selection) <= ns.length else { return nil }
+        var range = ns.lineRange(for: selection)
+        var end = NSMaxRange(range)
+        while end > range.location {
+            let character = ns.character(at: end - 1)
+            if character == 0x0A || character == 0x0D || character == 0x2028 || character == 0x2029 {
+                end -= 1
+            } else {
+                break
+            }
         }
+        range.length = end - range.location
+        return MarkdownParser.parseInline(ns, range: range,
+                                          references: MarkdownParser.analyze(ns).references)
+    }
+
+    private func removeInlineStyle(_ style: InlineStyle, from format: InlineFormatting,
+                                   preserving selection: NSRange, in ns: NSString) {
+        guard let edit = MarkdownEditing.removingInlineStyle(style, from: format, in: ns,
+                                                              preserving: selection) else { return }
+
+        clearPendingInlineFormats()
+        insertText(edit.replacement, replacementRange: edit.replacementRange)
+        setSelectedRange(edit.selectionAfterEdit)
     }
 
     /// Livello 0 = paragrafo normale.
@@ -573,6 +821,36 @@ final class MarkdownTextView: NSTextView, NSLayoutManagerDelegate {
         }
     }
 
+    @objc func toggleOrderedList(_ sender: Any?) {
+        let marker = try? NSRegularExpression(pattern: #"^([ \t]*)([0-9]{1,9})[.)][ \t]+"#)
+        let selected = selectedLineTexts()
+        let allOrdered = !selected.isEmpty && selected.allSatisfy { text in
+            let range = NSRange(location: 0, length: text.utf16.count)
+            return marker?.firstMatch(in: text, range: range)?.range.location == 0
+        }
+        var number = 1
+        transformLines { _, text in
+            let ns = text as NSString
+            let full = NSRange(location: 0, length: ns.length)
+            if allOrdered, let match = marker?.firstMatch(in: text, range: full) {
+                return ns.replacingCharacters(in: match.range, with: ns.substring(with: match.range(at: 1)))
+            }
+
+            var cursor = 0
+            while cursor < ns.length {
+                let c = ns.character(at: cursor)
+                if c == 32 || c == 9 { cursor += 1 } else { break }
+            }
+            let indentation = ns.substring(with: NSRange(location: 0, length: cursor))
+            var body = ns.substring(from: cursor)
+            if body.hasPrefix("- ") || body.hasPrefix("* ") || body.hasPrefix("+ ") {
+                body.removeFirst(2)
+            }
+            defer { number += 1 }
+            return "\(indentation)\(number). \(body)"
+        }
+    }
+
     @objc func toggleTaskList(_ sender: Any?) {
         transformLines { _, text in
             var body = text
@@ -601,6 +879,108 @@ final class MarkdownTextView: NSTextView, NSLayoutManagerDelegate {
         insertText("[\(text)](https://)", replacementRange: selection)
         let caret = selection.location + text.utf16.count + 3
         setSelectedRange(NSRange(location: caret, length: 8))
+    }
+
+    @objc func insertImage(_ sender: Any?) {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.image]
+        panel.prompt = localized("Insert")
+        panel.message = localized("Choose an image to insert.")
+
+        let completion: (NSApplication.ModalResponse) -> Void = { [weak self, weak panel] response in
+            guard response == .OK, let self, let url = panel?.url else { return }
+            self.insertImageMarkdown(for: url)
+        }
+        if let window { panel.beginSheetModal(for: window, completionHandler: completion) }
+        else { completion(panel.runModal()) }
+    }
+
+    private func insertImageMarkdown(for url: URL) {
+        let selection = selectedRange()
+        let ns = string as NSString
+        let selected = selection.length > 0 ? ns.substring(with: selection) : ""
+        let alt = selected.isEmpty ? url.deletingPathExtension().lastPathComponent : selected
+        let documentURL = (owningDocument ?? window?.windowController?.document as? MarkdownDocument)?.fileURL
+        let path = documentURL.map {
+            relativePath(from: $0.deletingLastPathComponent(), to: url)
+        } ?? url.path
+        let destination = path.contains(where: { $0.isWhitespace }) ? "<\(path)>" : path
+        insertText("![\(alt)](\(destination))", replacementRange: selection)
+    }
+
+    private func relativePath(from directory: URL, to target: URL) -> String {
+        let base = directory.standardizedFileURL.pathComponents
+        let destination = target.standardizedFileURL.pathComponents
+        var common = 0
+        while common < min(base.count, destination.count), base[common] == destination[common] {
+            common += 1
+        }
+        let parents = Array(repeating: "..", count: base.count - common)
+        return (parents + destination.dropFirst(common)).joined(separator: "/")
+    }
+
+    func resolvedURL(for destination: String) -> URL? {
+        if let absolute = URL(string: destination), absolute.scheme != nil { return absolute }
+        guard !destination.isEmpty else { return nil }
+        let documentURL = (owningDocument ?? window?.windowController?.document as? MarkdownDocument)?.fileURL
+        let base = documentURL?.deletingLastPathComponent()
+            ?? Workspace.shared.folder
+        guard let base else { return URL(fileURLWithPath: destination) }
+        return URL(fileURLWithPath: destination, relativeTo: base).standardizedFileURL
+    }
+
+    func previewImage(for destination: String) -> NSImage? {
+        guard let url = resolvedURL(for: destination) else { return nil }
+        let key = url.absoluteString
+        if let cached = imageCache[key] { return cached }
+
+        if url.isFileURL {
+            guard let image = NSImage(contentsOf: url) else { return nil }
+            imageCache[key] = image
+            return image
+        }
+
+        guard url.scheme == "http" || url.scheme == "https", !pendingImages.contains(key) else { return nil }
+        pendingImages.insert(key)
+        URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
+            guard let data, let image = NSImage(data: data) else {
+                DispatchQueue.main.async { self?.pendingImages.remove(key) }
+                return
+            }
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.pendingImages.remove(key)
+                self.imageCache[key] = image
+                self.styler.restyleAll()
+            }
+        }.resume()
+        return nil
+    }
+
+    func previewSize(for destination: String) -> NSSize? {
+        guard let preview = previewImage(for: destination), preview.size.width > 0,
+              preview.size.height > 0 else { return nil }
+        let available = max(120, min(520, (textContainer?.size.width ?? 520) - 24))
+        let scale = min(1, available / preview.size.width, 360 / preview.size.height)
+        return NSSize(width: preview.size.width * scale, height: preview.size.height * scale)
+    }
+
+    func applyImagePreview(_ image: InlineImage, to storage: NSTextStorage) -> Bool {
+        guard image.range.length > 0, NSMaxRange(image.range) <= storage.length,
+              previewImage(for: image.url) != nil, previewSize(for: image.url) != nil else { return false }
+        storage.addAttributes([.auroraImage: image.url, .auroraLink: image.url], range: image.range)
+        let first = (storage.string as NSString).rangeOfComposedCharacterSequence(at: image.range.location)
+        storage.addAttributes([.foregroundColor: NSColor.clear,
+                               .underlineStyle: 0], range: first)
+        let hiddenStart = NSMaxRange(first)
+        if hiddenStart < NSMaxRange(image.range) {
+            storage.addAttribute(.auroraConceal, value: true,
+                                 range: NSRange(location: hiddenStart,
+                                                length: NSMaxRange(image.range) - hiddenStart))
+        }
+        return true
     }
 
     @objc func insertCodeBlock(_ sender: Any?) {
@@ -975,10 +1355,9 @@ final class MarkdownTextView: NSTextView, NSLayoutManagerDelegate {
         activeInlineTableRange = nil
         let point = convert(event.locationInWindow, from: nil)
         if let index = characterIndex(at: point), let storage = textStorage, index < storage.length {
-            // ⌘-clic su un collegamento: lo apre nel browser.
-            if event.modifierFlags.contains(.command),
-               let value = storage.attribute(.auroraLink, at: index, effectiveRange: nil) as? String,
-               let url = URL(string: value), url.scheme != nil {
+            // Un clic su un collegamento lo apre nel browser predefinito.
+            if let value = storage.attribute(.auroraLink, at: index, effectiveRange: nil) as? String,
+               let url = resolvedURL(for: value) {
                 NSWorkspace.shared.open(url)
                 return
             }
@@ -1065,11 +1444,13 @@ final class MarkdownTextView: NSTextView, NSLayoutManagerDelegate {
 
     override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         switch menuItem.action {
-        case #selector(toggleBold(_:)), #selector(toggleItalic(_:)), #selector(toggleStrikethrough(_:)),
+        case #selector(toggleBold(_:)), #selector(toggleItalic(_:)), #selector(toggleUnderline(_:)),
+             #selector(toggleStrikethrough(_:)),
              #selector(toggleInlineCode(_:)), #selector(toggleHighlight(_:)), #selector(setHeadingLevel(_:)),
              #selector(promoteHeading(_:)), #selector(demoteHeading(_:)),
-             #selector(toggleBlockquote(_:)), #selector(toggleBulletList(_:)), #selector(toggleTaskList(_:)),
-             #selector(insertHorizontalRule(_:)), #selector(insertLink(_:)), #selector(insertCodeBlock(_:)),
+             #selector(toggleBlockquote(_:)), #selector(toggleBulletList(_:)), #selector(toggleOrderedList(_:)),
+             #selector(toggleTaskList(_:)), #selector(insertHorizontalRule(_:)), #selector(insertLink(_:)),
+             #selector(insertImage(_:)), #selector(insertCodeBlock(_:)),
              #selector(insertTable(_:)):
             return isEditable
         case #selector(editTable(_:)):

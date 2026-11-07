@@ -31,10 +31,15 @@ enum TableLayout {
             while from < to, isSpace(ns.character(at: from)) { from += 1 }
             while to > from, isSpace(ns.character(at: to - 1)) { to -= 1 }
             let range = NSRange(location: from, length: to - from)
-            cells.append(Cell(range: range, text: ns.substring(with: range)))
+            cells.append(Cell(range: range, text: unescape(ns.substring(with: range))))
         }
 
         while index < end {
+            if ns.character(at: index) == 92, index + 1 < end,
+               ns.character(at: index + 1) == 124 || ns.character(at: index + 1) == 92 {
+                index += 2
+                continue
+            }
             if ns.character(at: index) == 124 {
                 chiudi(at: index)
                 fieldStart = index + 1
@@ -50,4 +55,26 @@ enum TableLayout {
     }
 
     private static func isSpace(_ c: unichar) -> Bool { c == 32 || c == 9 }
+
+    private static func unescape(_ value: String) -> String {
+        var result = ""
+        var escaped = false
+        for character in value {
+            if escaped {
+                if character == "|" || character == "\\" {
+                    result.append(character)
+                } else {
+                    result.append("\\")
+                    result.append(character)
+                }
+                escaped = false
+            } else if character == "\\" {
+                escaped = true
+            } else {
+                result.append(character)
+            }
+        }
+        if escaped { result.append("\\") }
+        return result
+    }
 }

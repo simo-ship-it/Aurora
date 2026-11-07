@@ -42,7 +42,7 @@ final class Settings {
 
     // Gli estremi dei cursori, e insieme i limiti entro cui un valore letto dal
     // disco viene ricondotto: un plist modificato a mano non deve rompere il testo.
-    static let fontSizeRange: ClosedRange<CGFloat> = 11...30
+    static let fontSizeRange: ClosedRange<CGFloat> = 11...48
     static let lineHeightRange: ClosedRange<CGFloat> = 1.2...2.6
     static let contentWidthRange: ClosedRange<CGFloat> = 480...1200
 
@@ -69,6 +69,8 @@ final class Settings {
         contentWidth = number("contentWidth", Settings.defaults.maxContentWidth, Settings.contentWidthRange)
         appearance = Appearance(rawValue: store.string(forKey: Settings.prefix + "appearance") ?? "")
             ?? .system
+        // Preferenza rimossa: Aurora ora usa sempre una colonna centrata.
+        store.removeObject(forKey: Settings.prefix + "textLayout")
         isLoading = false
     }
 
@@ -88,11 +90,18 @@ final class Settings {
         lineHeight = Settings.defaults.lineHeightMultiple
         contentWidth = Settings.defaults.maxContentWidth
         appearance = .system
-        for key in ["fontFamily", "fontSize", "lineHeight", "contentWidth", "appearance"] {
+        for key in ["fontFamily", "fontSize", "lineHeight", "contentWidth", "textLayout", "appearance"] {
             store.removeObject(forKey: Settings.prefix + key)
         }
         isLoading = false
         apply()
+    }
+
+    /// Modifica la misura con un passo intero, rispettando sempre i limiti
+    /// disponibili anche quando l'azione arriva da una scorciatoia da tastiera.
+    func adjustFontSize(by amount: CGFloat) {
+        fontSize = min(max(fontSize + amount, Settings.fontSizeRange.lowerBound),
+                       Settings.fontSizeRange.upperBound)
     }
 
     // MARK: - Applicazione
@@ -106,7 +115,7 @@ final class Settings {
         theme.bodySize = fontSize
         // Il monospaziato ha occhio più grande: pareggiato alla lettera, sulla
         // stessa riga sembrerebbe più corpo del testo attorno.
-        theme.monoSize = (fontSize * 0.85).rounded()
+        theme.monoSize = (fontSize * 0.92).rounded()
         theme.lineHeightMultiple = lineHeight
         theme.maxContentWidth = contentWidth
         Theme.current = theme

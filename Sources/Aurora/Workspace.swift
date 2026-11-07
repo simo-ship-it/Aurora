@@ -10,7 +10,6 @@ final class Workspace {
     static let shared = Workspace()
 
     private static let defaultsKey = "AuroraWorkspaceFolder"
-    private static let favoritesKey = "AuroraFavoriteFolders"
     private static let lastDocumentKey = "AuroraLastDocument"
 
     /// Estensioni elencate. Le altre restano invisibili: l'elenco serve a
@@ -20,21 +19,51 @@ final class Workspace {
     private(set) var folder: URL? {
         didSet {
             guard folder != oldValue else { return }
+            observeFolderContents()
             UserDefaults.standard.set(folder?.path, forKey: Self.defaultsKey)
             NotificationCenter.default.post(name: .auroraWorkspaceChanged, object: self)
         }
     }
+
+    private var folderObserver: DirectoryChangeObserver?
+    private var scheduledContentsNotification: DispatchWorkItem?
 
     private init() {
         guard let path = UserDefaults.standard.string(forKey: Self.defaultsKey) else { return }
         var isFolder: ObjCBool = false
         if FileManager.default.fileExists(atPath: path, isDirectory: &isFolder), isFolder.boolValue {
             folder = URL(fileURLWithPath: path, isDirectory: true)
+            observeFolderContents()
         }
     }
 
     func open(_ url: URL) {
         folder = url.standardizedFileURL
+    }
+
+    /// Mantiene aggiornato l'albero nella finestra dell'editor anche per file
+    /// creati, rinominati o rimossi da Finder o da un'altra applicazione.
+    private func observeFolderContents() {
+        guard let folder else {
+            folderObserver = nil
+            return
+        }
+        folderObserver = DirectoryChangeObserver(directoryURL: folder, label: folder.path) { [weak self] in
+            self?.scheduleContentsNotification()
+        }
+    }
+
+    private func scheduleContentsNotification() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.scheduledContentsNotification?.cancel()
+            let work = DispatchWorkItem { [weak self] in
+                guard let self else { return }
+                NotificationCenter.default.post(name: .auroraWorkspaceContentsChanged, object: self)
+            }
+            self.scheduledContentsNotification = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(120), execute: work)
+        }
     }
 
     // MARK: - Ripristino dell'ultimo documento
@@ -55,48 +84,6 @@ final class Workspace {
 
     func forgetLastDocument() {
         UserDefaults.standard.removeObject(forKey: Self.lastDocumentKey)
-    }
-
-    // MARK: - Cartelle preferite
-
-    /// I preferiti sono collegamenti a cartelle, non copie: perciò l'elenco
-    /// resta leggero e continua a puntare al contenuto aggiornato sul disco.
-    /// Conserviamo anche i percorsi non disponibili (per esempio un disco
-    /// esterno scollegato), così l'utente può riconoscerli e rimuoverli.
-    var favoriteFolders: [URL] {
-        let paths = UserDefaults.standard.stringArray(forKey: Self.favoritesKey) ?? []
-        var seen = Set<String>()
-        return paths.compactMap { path in
-            let url = URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL
-            return seen.insert(url.path).inserted ? url : nil
-        }
-    }
-
-    func isFavorite(_ url: URL) -> Bool {
-        let path = url.standardizedFileURL.path
-        return favoriteFolders.contains { $0.path == path }
-    }
-
-    @discardableResult
-    func addFavorite(_ url: URL) -> Bool {
-        let url = url.standardizedFileURL
-        guard !isFavorite(url) else { return false }
-        var paths = UserDefaults.standard.stringArray(forKey: Self.favoritesKey) ?? []
-        paths.append(url.path)
-        UserDefaults.standard.set(paths, forKey: Self.favoritesKey)
-        NotificationCenter.default.post(name: .auroraFavoritesChanged, object: self)
-        return true
-    }
-
-    @discardableResult
-    func removeFavorite(_ url: URL) -> Bool {
-        let path = url.standardizedFileURL.path
-        let paths = UserDefaults.standard.stringArray(forKey: Self.favoritesKey) ?? []
-        let updated = paths.filter { $0 != path }
-        guard updated.count != paths.count else { return false }
-        UserDefaults.standard.set(updated, forKey: Self.favoritesKey)
-        NotificationCenter.default.post(name: .auroraFavoritesChanged, object: self)
-        return true
     }
 
     /// Alla prima apertura di un documento adotta la sua cartella, così il

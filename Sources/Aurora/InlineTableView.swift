@@ -22,7 +22,9 @@ final class InlineTableView: NSView, NSTextFieldDelegate {
     private var activeRow: Int?
     private var activeColumn: Int?
 
-    static let rowHeight: CGFloat = 44
+    static var rowHeight: CGFloat {
+        max(36, ceil(Theme.current.tableBody.pointSize * Theme.current.lineHeightMultiple) + 16)
+    }
     static let rowControlGutter: CGFloat = 60
     static let columnControlGutter: CGFloat = 34
     private static let horizontalInset: CGFloat = 14
@@ -95,10 +97,7 @@ final class InlineTableView: NSView, NSTextFieldDelegate {
     func applyTheme() {
         for (row, fieldRow) in fields.enumerated() {
             for field in fieldRow {
-                field.font = row == 0
-                    ? .systemFont(ofSize: Theme.current.bodySize, weight: .semibold)
-                    : Theme.current.body
-                field.textColor = Theme.current.text
+                applyInlineStyle(to: field, isHeader: row == 0)
             }
         }
         addRowButton.contentTintColor = Theme.current.text
@@ -118,10 +117,6 @@ final class InlineTableView: NSView, NSTextFieldDelegate {
                 field.drawsBackground = false
                 field.focusRingType = .none
                 field.lineBreakMode = .byTruncatingTail
-                field.font = row == 0
-                    ? .systemFont(ofSize: Theme.current.bodySize, weight: .semibold)
-                    : Theme.current.body
-                field.textColor = Theme.current.text
                 field.delegate = self
                 field.tag = row * max(1, table.columnCount) + column
                 field.setAccessibilityLabel(row == 0
@@ -288,28 +283,19 @@ final class InlineTableView: NSView, NSTextFieldDelegate {
         super.draw(dirtyRect)
 
         let tableBounds = tableBounds
-        Theme.current.codeBackground.setFill()
-        NSBezierPath(roundedRect: tableBounds,
-                     xRadius: Theme.current.surfaceRadius,
-                     yRadius: Theme.current.surfaceRadius).fill()
+        Theme.current.background.setFill()
+        tableBounds.fill()
 
-        Theme.current.rule.withAlphaComponent(0.42).setStroke()
-        let path = NSBezierPath()
-        path.lineWidth = 1
-        let columns = max(1, table.columnCount)
-        let columnWidth = tableBounds.width / CGFloat(columns)
-        for column in 1..<columns {
-            let x = (tableBounds.minX + CGFloat(column) * columnWidth).rounded() + 0.5
-            path.move(to: NSPoint(x: x, y: tableBounds.minY + 8))
-            path.line(to: NSPoint(x: x, y: tableBounds.maxY - 8))
-        }
         let visibleRows = table.rows.count + 1
         for row in 1..<visibleRows {
+            (row == 1 ? Theme.current.tableHeaderRule : Theme.current.rule).setStroke()
+            let path = NSBezierPath()
+            path.lineWidth = 1
             let y = (tableBounds.minY + CGFloat(row) * Self.rowHeight).rounded() + 0.5
-            path.move(to: NSPoint(x: tableBounds.minX + 8, y: y))
-            path.line(to: NSPoint(x: tableBounds.maxX - 8, y: y))
+            path.move(to: NSPoint(x: tableBounds.minX, y: y))
+            path.line(to: NSPoint(x: tableBounds.maxX, y: y))
+            path.stroke()
         }
-        path.stroke()
     }
 
     @objc private func addRow() {
@@ -347,12 +333,174 @@ final class InlineTableView: NSView, NSTextFieldDelegate {
         if let field = notification.object as? NSTextField,
            let editor = field.currentEditor() {
             editor.nextResponder = self
+            applyInlineStyle(to: field, isHeader: isHeader(field))
         }
         onActivate(sourceRange)
     }
 
+    func controlTextDidChange(_ notification: Notification) {
+        guard let field = notification.object as? NSTextField else { return }
+        applyInlineStyle(to: field, isHeader: isHeader(field))
+    }
+
     func controlTextDidEndEditing(_ notification: Notification) {
         commitChanges()
+        guard let field = notification.object as? NSTextField else { return }
+        applyInlineStyle(to: field, isHeader: isHeader(field))
+    }
+
+    // MARK: - Formattazione inline
+
+    @objc func toggleBold(_ sender: Any?) { toggleInlineStyle(.bold, opening: "**") }
+    @objc func toggleItalic(_ sender: Any?) { toggleInlineStyle(.italic, opening: "*") }
+    @objc func toggleUnderline(_ sender: Any?) {
+        toggleInlineStyle(.underline, opening: "<u>", closing: "</u>")
+    }
+    @objc func toggleStrikethrough(_ sender: Any?) {
+        toggleInlineStyle(.strike, opening: "~~")
+    }
+    @objc func toggleInlineCode(_ sender: Any?) { toggleInlineStyle(.code, opening: "`") }
+    @objc func toggleHighlight(_ sender: Any?) { toggleInlineStyle(.highlight, opening: "==") }
+
+    private func toggleInlineStyle(_ style: InlineStyle, opening: String,
+                                   closing: String? = nil) {
+        guard let (field, editor) = activeEditor() else { return }
+        let ns = editor.string as NSString
+        let selection = MarkdownEditing.emphasisRange(in: ns,
+                                                       selection: editor.selectedRange())
+        let closing = closing ?? opening
+        let parsed = MarkdownParser.parseInline(ns,
+                                                range: NSRange(location: 0, length: ns.length))
+
+        if let format = parsed.formats
+            .filter({ format in
+                guard format.style.contains(style) else { return false }
+                let outer = NSRange(location: format.openingRange.location,
+                                    length: NSMaxRange(format.closingRange)
+                                        - format.openingRange.location)
+                let insideContent = selection.location >= format.contentRange.location
+                    && NSMaxRange(selection) <= NSMaxRange(format.contentRange)
+                let includesSyntax = selection.location >= outer.location
+                    && NSMaxRange(selection) <= NSMaxRange(outer)
+                return insideContent || includesSyntax
+            })
+            .min(by: { $0.contentRange.length < $1.contentRange.length }),
+           let edit = MarkdownEditing.removingInlineStyle(style, from: format, in: ns,
+                                                           preserving: selection) {
+            editor.insertText(edit.replacement, replacementRange: edit.replacementRange)
+            editor.setSelectedRange(edit.selectionAfterEdit)
+            applyInlineStyle(to: field, isHeader: isHeader(field))
+            return
+        }
+
+        if selection.length > 0,
+           let edit = MarkdownEditing.applyingInlineStyle(style, to: selection,
+                                                           formats: parsed.formats, in: ns,
+                                                           opening: opening,
+                                                           closing: closing) {
+            editor.insertText(edit.replacement, replacementRange: edit.replacementRange)
+            editor.setSelectedRange(edit.selectionAfterEdit)
+            applyInlineStyle(to: field, isHeader: isHeader(field))
+            return
+        }
+
+        let selected = selection.length > 0 ? ns.substring(with: selection) : ""
+        editor.insertText(opening + selected + closing, replacementRange: selection)
+        editor.setSelectedRange(NSRange(location: selection.location + opening.utf16.count,
+                                        length: selection.length))
+        applyInlineStyle(to: field, isHeader: isHeader(field))
+    }
+
+    private func activeEditor() -> (NSTextField, NSTextView)? {
+        for field in fields.joined() {
+            if let editor = field.currentEditor() as? NSTextView { return (field, editor) }
+        }
+        return nil
+    }
+
+    private func isHeader(_ field: NSTextField) -> Bool {
+        field.tag / max(1, table.columnCount) == 0
+    }
+
+    /// Le celle conservano la stringa Markdown, mentre delimitatori e stili
+    /// diventano attributi visivi. I marcatori restano nel field editor con un
+    /// corpo quasi nullo: gli indici di selezione continuano così a coincidere
+    /// con quelli del testo che verrà salvato.
+    private func applyInlineStyle(to field: NSTextField, isHeader: Bool) {
+        let baseFont = isHeader
+            ? Theme.current.tableHeader
+            : Theme.current.tableBody
+
+        if let editor = field.currentEditor() as? NSTextView,
+           let storage = editor.textStorage {
+            let selection = editor.selectedRange()
+            style(storage, text: editor.string, baseFont: baseFont)
+            let location = min(selection.location, storage.length)
+            let length = min(selection.length, storage.length - location)
+            editor.setSelectedRange(NSRange(location: location, length: length))
+            editor.typingAttributes = [
+                .font: baseFont,
+                .foregroundColor: Theme.current.text
+            ]
+            return
+        }
+
+        let attributed = NSMutableAttributedString(string: field.stringValue)
+        style(attributed, text: field.stringValue, baseFont: baseFont)
+        field.attributedStringValue = attributed
+    }
+
+    private func style(_ storage: NSMutableAttributedString, text: String,
+                       baseFont: NSFont) {
+        let fullRange = NSRange(location: 0, length: storage.length)
+        storage.beginEditing()
+        storage.setAttributes([
+            .font: baseFont,
+            .foregroundColor: Theme.current.text
+        ], range: fullRange)
+
+        let ns = text as NSString
+        let inline = MarkdownParser.parseInline(ns,
+                                                range: NSRange(location: 0, length: ns.length))
+        for run in inline.runs where NSMaxRange(run.range) <= storage.length {
+            var attributes: [NSAttributedString.Key: Any] = [:]
+            if run.style.contains(.code) {
+                attributes[.font] = NSFont.monospacedSystemFont(
+                    ofSize: baseFont.pointSize * 0.92, weight: .regular)
+                attributes[.foregroundColor] = Theme.current.codeText
+                attributes[.backgroundColor] = Theme.current.inlineCodeBackground
+            } else {
+                attributes[.font] = Theme.apply(bold: run.style.contains(.bold),
+                                                italic: run.style.contains(.italic),
+                                                to: baseFont)
+            }
+            if run.style.contains(.strike) {
+                attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
+                attributes[.foregroundColor] = Theme.current.quoteText
+            }
+            if run.style.contains(.underline) {
+                attributes[.underlineStyle] = NSUnderlineStyle.single.rawValue
+            }
+            if run.style.contains(.highlight) {
+                attributes[.backgroundColor] = Theme.current.highlight
+            }
+            if run.style.contains(.link) || run.style.contains(.image) {
+                attributes[.foregroundColor] = Theme.current.accent
+                attributes[.underlineStyle] = NSUnderlineStyle.single.rawValue
+                attributes[.underlineColor] = Theme.current.accent.withAlphaComponent(0.35)
+            }
+            storage.addAttributes(attributes, range: run.range)
+        }
+
+        let concealed: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 0.01),
+            .foregroundColor: NSColor.clear,
+            .kern: -0.01
+        ]
+        for marker in inline.markers where NSMaxRange(marker) <= storage.length {
+            storage.addAttributes(concealed, range: marker)
+        }
+        storage.endEditing()
     }
 
     func control(_ control: NSControl, textView: NSTextView,

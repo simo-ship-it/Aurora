@@ -5,8 +5,8 @@
 
 Editor Markdown nativo per macOS, scritto in Swift e AppKit. Come Typora, mostra il
 testo già formattato **mentre lo scrivi**: non c'è un riquadro di anteprima separato,
-c'è una sola area di scrittura in cui i marcatori Markdown si nascondono quando il
-cursore non è sulla riga e ricompaiono appena ci torni.
+c'è una sola area di scrittura in cui i marcatori Markdown restano sempre nascosti.
+Le scorciatoie applicano e tolgono la formattazione senza mostrare la sintassi.
 
 Il file su disco resta Markdown puro: nessun formato proprietario, nessuna conversione.
 
@@ -14,16 +14,38 @@ Il file su disco resta Markdown puro: nessun formato proprietario, nessuna conve
 
 <p align="center">
   <img src="docs/screenshot-it.png" width="820"
-       alt="Aurora con un documento Markdown: ogni marcatore è nascosto tranne che sulla riga dove sta il cursore, dove i due asterischi attorno a una frase in grassetto si vedono in grigio.">
+       alt="Aurora con un documento Markdown mostrato come testo già formattato.">
 </p>
 
-<p align="center"><em>Il cursore è sulla terza riga — e solo lì compaiono i
-<code>**</code> attorno alla frase in grassetto.</em></p>
+<p align="center"><em>Il documento resta Markdown puro su disco, mentre
+nell'editor si vede soltanto il risultato formattato.</em></p>
+
+<p align="center">
+  <img src="docs/screenshot-dark-it.png" width="820"
+       alt="Aurora in modalità scura, con titoli, attività e una tabella modificabile.">
+</p>
+
+<p align="center"><em>La stessa area di scrittura in modalità scura.</em></p>
+
+<p align="center">
+  <img src="docs/screenshot-split-it.png" width="1000"
+       alt="Due documenti Markdown affiancati in Aurora, ciascuno con il proprio editor e i comandi del documento.">
+</p>
+
+<p align="center"><em>Bozza e appunti di ricerca affiancati, con scorrimento,
+salvataggio e annullamento indipendenti.</em></p>
 
 ## Installare
 
 ```bash
 brew install simo-ship-it/aurora/aurora
+```
+
+Per aggiornare un’installazione esistente:
+
+```bash
+brew update
+brew upgrade simo-ship-it/aurora/aurora
 ```
 
 È una formula, non un cask: scarica il sorgente e compila Aurora sulla tua
@@ -64,17 +86,19 @@ file dal Finder e il menu documenti funzionano solo eseguendo il bundle `.app`.
 
 | Elemento | Resa |
 | --- | --- |
-| Titoli `#` … `######` | Sei livelli, con dimensioni dedicate |
+| Titoli `#` … `######`, Setext `===` / `---` | Sei livelli, con dimensioni dedicate |
 | `**grassetto**`, `*corsivo*`, `***entrambi***` | Font reale, marcatori nascosti |
+| `<u>sottolineato</u>` | Sottolineatura, tag nascosti |
 | `~~barrato~~`, `==evidenziato==` | Barratura e sfondo giallo |
 | `` `codice inline` `` | Font a spaziatura fissa con sfondo |
-| Blocchi ` ``` ` e `~~~` | Riquadro grigio, righe di delimitazione nascoste |
+| Blocchi di codice recintati o rientrati | Riquadro grigio, delimitatori nascosti |
 | Citazioni `>` (anche annidate) | Barra laterale e rientro per livello |
 | Elenchi `-`, `*`, `+`, `1.`, `1)` | Pallini disegnati, rientri automatici |
 | Task list `- [ ]` / `- [x]` | Casella cliccabile, voce completata barrata |
-| `[testo](url)` e `<url>` | Collegamento colorato, apribile con ⌘-clic |
+| Collegamenti inline, di riferimento e automatici | Colorati, apribili con un clic nel browser |
+| Immagini `![alt](percorso)` | Anteprima locale o remota, sorgente Markdown preservata |
 | `---`, `***`, `___` | Linea orizzontale disegnata |
-| Tabelle `\| a \| b \|` | Colonne allineate, intestazione in grassetto, allineamenti `:---:` |
+| Tabelle `\| a \| b \|` | Celle modificabili, intestazione in grassetto, allineamenti e comandi per righe e colonne |
 
 ## Scrittura
 
@@ -82,14 +106,17 @@ file dal Finder e il menu documenti funzionano solo eseguendo il bundle `.app`.
   su un elemento vuoto esce dall'elenco.
 - **Tab** e **⇧Tab** aumentano entrambi il rientro degli elementi. Per ridurlo si
   tolgono gli spazi a mano: è una scelta, non una dimenticanza.
-- **⌘B**, **⌘I**, **⇧⌘X**, **⇧⌘H** applicano e tolgono grassetto, corsivo,
-  barrato ed evidenziato.
+- **⌘B**, **⌘I**, **⌘U**, **⇧⌘X**, **⇧⌘H** applicano e tolgono grassetto,
+  corsivo, sottolineato, barrato ed evidenziato.
 - **⌘1 … ⌘6** impostano il livello del titolo, **⌘0** torna a paragrafo.
+- **⌘+** porta il paragrafo corrente attraverso H6 … H1; **⌘−** torna da H1
+  attraverso H6 fino al paragrafo normale.
 - **⇧⌘U** elenco puntato, **⇧⌘T** elenco di attività, **⌥⌘K** blocco di codice,
-  **⌘K** collegamento.
+  **⌘K** collegamento. Elenchi numerati e immagini sono disponibili dal menu
+  **Formato**.
 - **/** apre il menu dei comandi (vedi sotto).
 - **⌘F** cerca nel documento, con la barra di ricerca di sistema.
-- Un clic su una casella `[ ]` la spunta; **⌘-clic** su un collegamento lo apre.
+- Un clic su una casella `[ ]` la spunta; un clic su un collegamento lo apre nel browser predefinito.
 
 Codice inline, citazione e linea orizzontale si prendono dal menu **Formato**: le loro
 scorciatoie (⌘`, ⇧⌘', ⇧⌘-) sono dichiarate su tasti di punteggiatura che con layout
@@ -102,8 +129,9 @@ delle finestre sono quelli standard di macOS.
 
 Digitando **/** a inizio riga, o dopo uno spazio, si apre un elenco di tutti i comandi
 di formattazione: titoli, elenchi, citazione, blocco di codice, linea orizzontale,
-collegamento, grassetto, corsivo, barrato, evidenziato, codice inline. Continuando a
-scrivere si filtra, **↑ ↓** scorrono, **Invio** o un clic applicano, **Esc** chiude.
+collegamento, immagine, grassetto, corsivo, barrato, evidenziato, codice inline.
+Continuando a scrivere si filtra, **↑ ↓** scorrono, **Invio** o un clic applicano,
+**Esc** chiude.
 Il testo digitato dopo la barra sparisce insieme al menu.
 
 Si filtra sul nome ma anche sulla sintassi: `/###` trova Titolo 3 e `/---` la linea
@@ -121,6 +149,12 @@ Il pulsante a forma di cartella in barra del titolo apre l'albero della cartella
 stai lavorando: le sottocartelle si aprono sul posto, i file si aprono con un clic.
 Per sceglierne un'altra, **⌘⇧O** oppure un clic sul nome della cartella in cima al
 pannello.
+I pulsanti accanto aprono la stessa cartella nel Finder, in Claude Cowork o in ChatGPT.
+
+Il menu delle azioni e il clic destro su un elemento permettono di creare cartelle,
+rinominare, spostare, copiare, duplicare ed eliminare file o cartelle. Le modifiche
+eseguite fuori da Aurora aggiornano automaticamente l’albero. All’avvio l’app
+riapre anche l’ultimo documento.
 
 I figli di una cartella si leggono dal disco solo quando la si apre, quindi un albero
 profondo non costa nulla finché resta chiuso. La cartella scelta e quali sono aperte
@@ -131,6 +165,22 @@ Elenca solo `.md`, `.markdown`, `.mdown`, `.mkd`, `.mdtext` e `.txt`: serve a sc
 non a esplorare il disco. La prima volta che punti la cartella dentro Documenti,
 Scrivania o Download, macOS chiede il permesso di accedervi.
 
+## Due documenti affiancati
+
+Usa **File → Apri affiancato…** (`⌘\`) oppure il pulsante di divisione nella
+barra del titolo per scegliere il secondo documento. Puoi scegliere anche un
+file già aperto: l’editor viene trasferito nello split conservando modifiche non
+salvate e cronologia di annullamento.
+
+Trascina il divisore per regolare le larghezze. I documenti scorrono e si
+modificano in modo indipendente; **⌘S** salva quello in cui stai lavorando.
+**Control-Tab** passa all’altro documento. Le intestazioni mostrano il nome di
+ogni file e le modifiche non salvate. Il pulsante di chiusura in un’intestazione
+chiude solo quel documento, dopo la verifica delle modifiche.
+**Vista → Separa documenti**, oppure il pulsante per la finestra separata in
+un’intestazione, torna a due finestre. Chiudere tutta la finestra verifica
+entrambi i documenti prima di chiuderli.
+
 ## Impostazioni
 
 **⌘,** apre le impostazioni: carattere, dimensione del testo, interlinea,
@@ -138,6 +188,15 @@ larghezza della colonna, e se l'app segua l'aspetto di sistema o resti chiara o
 scura. I cursori mostrano il valore mentre li trascini ma lo applicano solo
 quando lasci il mouse: ogni cambiamento ridisegna tutti i documenti aperti, e
 farlo a ogni scatto renderebbe il trascinamento a scatti sui file lunghi.
+
+L'editor usa sempre una colonna di lettura centrata. Tieni premuto **⌥ Option**
+per mostrare le due guide laterali, poi trascinane una: entrambi i lati si
+spostano in modo simmetrico. La larghezza scelta viene salvata automaticamente
+e resta disponibile anche nelle impostazioni.
+
+Per una regolazione immediata mentre scrivi, scegli **Vista → Aumenta dimensione
+testo** (**⇧⌘+**) o **Riduci dimensione testo** (**⇧⌘−**). Il comando nel menu
+ripristina la dimensione predefinita.
 
 Il carattere predefinito è quello di sistema, che non è una famiglia fra le
 altre: segue la dimensione ottica e le impostazioni di accessibilità. Il codice
@@ -175,7 +234,13 @@ Sources/Aurora/
   MarkdownTextView.swift   NSTextView: glifi nascosti, decorazioni, comandi di editing
   MarkdownStyler.swift     dal risultato dell'analisi agli attributi del testo
   SlashMenu.swift          il menu dei comandi che si apre con "/"
-  TableLayout.swift        celle, colonne e allineamenti delle tabelle
+  InlineTableView.swift    celle modificabili e comandi per righe e colonne
+  TableLayout.swift        misure e allineamenti delle tabelle
+  DocumentWindowController.swift  finestre con documenti singoli e affiancati
+  ColumnWidthOverlayView.swift  guide trascinabili della colonna di lettura
+  FileChangeObserver.swift  modifiche esterne a documenti e cartelle
+  WorkspaceFileOperations.swift  gestione dei file e annullamento
+  ChatGPTLauncher.swift    apertura della cartella di lavoro in ChatGPT
   Workspace.swift          cartella di lavoro e stato dell'albero, su UserDefaults
   WorkspaceBrowser.swift   pulsante in barra del titolo e albero dei file
   Theme.swift              font, colori chiari/scuri, metriche
@@ -192,12 +257,11 @@ Il punto delicato è nascondere la sintassi senza toccare il testo. Aurora usa l
 stack TextKit 1 e, tramite il delegato del layout manager, tratta i caratteri
 marcati con un attributo interno come controlli a larghezza zero: i marcatori
 restano nel documento e nella propria riga ma non occupano spazio. Quando la
-selezione entra in una riga, l'attributo viene tolto e i marcatori riappaiono in
-grigio.
+selezione entra in una riga, la resa non cambia: i marcatori restano invisibili.
 
 Per restare fluido su file grandi, lo stile non viene ricalcolato ovunque a ogni
-tasto: si aggiornano le righe modificate, quelle che entrano o escono dalla selezione
-e quelle che compaiono scorrendo. L'unico caso in cui serve andare oltre è l'apertura
+tasto: si aggiornano le righe modificate e quelle che compaiono scorrendo. L'unico
+caso in cui serve andare oltre è l'apertura
 o la chiusura di un blocco di codice, che cambia l'aspetto di tutto ciò che segue: lo
 styler se ne accorge confrontando lo stato dei blocchi prima e dopo la modifica.
 
@@ -207,44 +271,53 @@ nascosto, che avendo larghezza zero non è un'ancora geometrica utile. Si enumer
 invece i frammenti di riga inquadrati e si incrociano con gli intervalli di caratteri:
 ogni decorazione resta così legata alla propria riga.
 
-Le tabelle sono l'unico posto dove il disegno interviene sulla spaziatura del testo.
-TextKit sa impaginare tabelle vere, ma vuole una cella per paragrafo, mentre qui una
-riga intera è un paragrafo solo. Le colonne si ottengono allora misurando le celle e
-allargando con la crenatura il carattere che precede ciascuna, così che cada al suo
-posto; le barre verticali restano nel testo ma diventano trasparenti, e riappaiono in
-grigio quando il cursore è sulla riga. La riga dei trattini si nasconde come qualunque
-altro marcatore e al suo posto viene disegnato il filetto dell'intestazione. Il file su
-disco non cambia di un byte.
+Le tabelle usano celle native modificabili sopra la sorgente Markdown nascosta.
+Modificare una cella o aggiungere e rimuovere righe e colonne aggiorna la tabella
+Markdown sottostante e partecipa alla cronologia di annullamento del documento.
+Il file su disco resta Markdown puro.
 
 C'è poi una regola che tiene fermo il testo mentre lo scrivi: **la geometria verticale
-di una riga non dipende dal cursore, e nessun tipo di riga aggiunge spazio sopra o
-sotto di sé**. La separazione la danno le righe vuote — che in Markdown sono anche il
-modo in cui la separazione è scritta nel file. Senza questo vincolo il testo scappa da
-sotto le dita: lo spazio nascerebbe nell'istante in cui la riga cambia natura, cioè
-mentre ci stai ancora scrivendo dentro. Per questo `paragraphStyle` non riceve lo stato
-di selezione: il vincolo lo fa rispettare il compilatore, non la memoria di chi tocca
-il file. Resta il solo scarto del corpo più grande di un titolo, due punti.
+di una riga non dipende dal cursore, e le righe di solo testo non aggiungono spazio
+sopra o sotto di sé**. La separazione la danno le righe vuote — che in Markdown sono
+anche il modo in cui la separazione è scritta nel file. Fanno eccezione, volutamente,
+le anteprime delle immagini, che riservano sotto la sorgente l'altezza necessaria.
+`paragraphStyle` non riceve lo stato di selezione, quindi la geometria non cambia
+quando il cursore entra o esce dalla riga.
 
 ## Prove
 
 ```bash
 swift run AuroraCheck
+python3 Scripts/check_app.py
 ```
 
 Le prove sono un eseguibile invece che un target di test perché XCTest e
 swift-testing arrivano con Xcode, mentre per compilare Aurora bastano i Command
 Line Tools: legarle a Xcode significherebbe che sulla macchina di chi sviluppa
 l'app non girano. Coprono il parser — titoli, elenchi, caselle, citazioni,
-recinti, tabelle, estremi del documento — e l'aritmetica di indici dietro ai
-comandi di modifica.
+blocchi di codice, tabelle, collegamenti, immagini, estremi del documento — e
+l'aritmetica di indici dietro ai comandi di modifica.
+
+`check_app.py` verifica anche le finestre AppKit e lo split: salvataggio,
+annullamento indipendente, immagini relative, trasferimento tra finestre e
+annullamento di una chiusura con modifiche non salvate. Richiede una sessione
+macOS con desktop attivo. Usa un identificativo dell’app, preferenze e file di
+prova separati, dentro `.build/AppChecks`.
+
+Per aggiornare le schermate dei README dalle vere viste AppKit:
+
+```bash
+python3 Scripts/capture_screenshots.py
+```
+
+Lo script acquisisce finestre in inglese e italiano, in modalità chiara, scura e
+affiancata, usando un identificativo dell’app, preferenze e documenti di esempio
+separati.
 
 ## Limiti attuali
 
-- Le immagini `![](…)` sono mostrate come collegamento, non incorporate.
-- I blocchi di codice indentati di quattro spazi non sono riconosciuti come tali
-  (servono i delimitatori ` ``` `), per non alterare gli elenchi annidati.
 - Nessuna evidenziazione della sintassi dentro i blocchi di codice.
-- Titoli in stile setext (sottolineati con `===`) non riconosciuti.
+- HTML grezzo, note a piè di pagina, notazione matematica e diagrammi restano testo.
 - Aprire un recinto ` ``` ` senza chiuderlo rende codice tutto il resto del documento,
   come vuole il Markdown: il testo sotto si riorganizza finché non lo chiudi.
 
@@ -252,8 +325,6 @@ comandi di modifica.
 
 - **⌘` , ⇧⌘' e ⇧⌘- non rispondono** con tastiere non statunitensi. I comandi
   funzionano dal menu Formato.
-- Le tabelle non hanno righe di separazione fra le celle, solo il filetto sotto
-  l'intestazione: le colonne si leggono dall'allineamento.
 
 ## Contribuire
 
