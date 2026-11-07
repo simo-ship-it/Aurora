@@ -35,6 +35,7 @@ All notable changes to Aurora are recorded here. The format follows
 - Improved Markdown parsing, formatting commands, table layout and file change
   handling.
 - Refreshed translations across all eight supported languages.
+- CI and universal releases now use the supported `macos-15` runner.
 
 ## [0.1.0] — first release
 

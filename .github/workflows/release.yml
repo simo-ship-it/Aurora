@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   release:
-    runs-on: macos-14
+    runs-on: macos-15
     env:
       # Un segreto non si può leggere dentro `if:`, ma si può copiare in una
       # variabile d'ambiente e interrogare quella.
